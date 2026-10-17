@@ -1,0 +1,12 @@
+/fintrace-bff
+/bin/
+*.test
+*.out
+coverage.*
+
+.env
+
+.idea/
+*.iml
+.vscode/
+.DS_Store
