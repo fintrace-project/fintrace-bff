@@ -50,11 +50,11 @@ func asLogLevel(logLevel string, ec *errorCollector) slog.Level {
 func getOptionalEnv(getenv func(string) string, envName, defValue string) string {
 	env := getenv(envName)
 
-	if env != "" {
-		return env
+	if env == "" {
+		return defValue
 	}
 
-	return defValue
+	return env
 }
 
 func getRequiredEnv(getenv func(string) string, envName string, ec *errorCollector) string {
