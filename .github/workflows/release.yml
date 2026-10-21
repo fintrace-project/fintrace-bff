@@ -1,0 +1,124 @@
+name: Release
+
+# Releases are deliberate: they happen when a `v*` tag is pushed, never on every commit to main.
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write   # create the GitHub Release
+  packages: write   # push images to GHCR
+
+jobs:
+  bff:
+    name: fintrace-bff
+    runs-on: ubuntu-latest
+    outputs:
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the previous tag is needed to tell whether this component changed
+
+      - name: Resolve version and image name
+        id: meta
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Semver, optionally with a pre-release suffix: v0.2.0, v0.2.0-rc.1
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' is not semver (expected vMAJOR.MINOR.PATCH[-prerelease])"
+            exit 1
+          fi
+          # GHCR rejects uppercase; the owner is read from the repo so a fork publishes to itself
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/fintrace-bff"
+          # A pre-release never becomes :latest, or a NAS pulling latest quietly runs an rc
+          case "$version" in
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
+          esac
+          {
+            echo "version=$version"
+            echo "image=$image"
+            echo "prerelease=$prerelease"
+            echo "tags<<TAGS_EOF"
+            echo "$image:$version"
+            [ "$prerelease" = "false" ] && echo "$image:latest"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # One stack-wide version, but an unchanged BFF is renamed rather than rebuilt: a rebuild of
+      # identical source yields a new digest, and then "did it change between 0.3.0 and 0.4.0?" can
+      # no longer be answered by comparing digests.
+      - name: Decide build or retag
+        id: decide
+        run: |
+          previous="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -z "$previous" ]; then
+            echo "No previous tag: building."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          changed="$(git diff --name-only "$previous" "${GITHUB_REF_NAME}")"
+          if [ -n "$changed" ]; then
+            echo "Changed since $previous:"; echo "$changed"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unchanged since $previous: retagging that image."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.decide.outputs.build == 'true'
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod
+
+      # The tag is what gets deployed, so it is tested here too rather than trusted from CI.
+      - name: Test
+        if: steps.decide.outputs.build == 'true'
+        run: go test -race ./...
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        if: steps.decide.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Copies the manifest inside the registry: no build, no upload, same digest.
+      - name: Retag the previous image
+        if: steps.decide.outputs.build == 'false'
+        env:
+          PREVIOUS_TAG: ${{ steps.decide.outputs.previous }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          args=""
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && args="$args -t $tag"
+          done <<< "$TAGS"
+          docker buildx imagetools create $args \
+            ${{ steps.meta.outputs.image }}:"${PREVIOUS_TAG#v}"
+
+  release:
+    name: GitHub Release
+    needs: bff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ needs.bff.outputs.prerelease == 'true' }}

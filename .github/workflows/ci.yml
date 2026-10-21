@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+# A second push to the same branch cancels the first: the older answer is no longer interesting.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bff:
+    name: fintrace-bff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.mod   # no go.sum while the module has no dependencies
+
+      - name: Format
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "::error::run gofmt -w ."; exit 1; }
+
+      - name: Vet
+        run: go vet ./...
+
+      # `latest`: a golangci-lint built with an older Go refuses to lint a newer go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+      - name: Test
+        run: go test -race ./...
+
+      # The binary is compiled inside the image, so a broken Dockerfile would otherwise surface only
+      # when a tag is pushed.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
