@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 func TestHealthz(t *testing.T) {
@@ -29,7 +31,7 @@ func TestHealthz(t *testing.T) {
 			wantStatus: http.StatusNotFound},
 	}
 	// A real server rather than a recorder: only a server drops the body of a HEAD response.
-	srv := httptest.NewServer(RoutesHandler())
+	srv := httptest.NewServer(RoutesHandler(noop.NewTracerProvider()))
 	t.Cleanup(srv.Close)
 
 	for _, tt := range tests {

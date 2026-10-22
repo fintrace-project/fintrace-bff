@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/trace/noop"
+
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 )
 
@@ -50,7 +52,7 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestServeAnswersUntilCancelledThenShutsDownCleanly(t *testing.T) {
-	addr, cancel, done := startServe(t, newHTTPServer(config.Config{ListenAddr: "127.0.0.1:0"}))
+	addr, cancel, done := startServe(t, newHTTPServer(config.Config{ListenAddr: "127.0.0.1:0"}, noop.NewTracerProvider()))
 
 	if code, body := get(t, addr+"/healthz"); code != http.StatusOK || body != `{"status":"UP"}` {
 		t.Fatalf("GET /healthz = %d %q, want 200 {\"status\":\"UP\"}", code, body)
@@ -115,7 +117,7 @@ func TestServeLetsARequestInFlightFinish(t *testing.T) {
 }
 
 func TestServeReportsAServerThatCannotRun(t *testing.T) {
-	srv := newHTTPServer(config.Config{ListenAddr: "127.0.0.1:0"})
+	srv := newHTTPServer(config.Config{ListenAddr: "127.0.0.1:0"}, noop.NewTracerProvider())
 	ln, err := listen(srv)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +137,7 @@ func TestListenRejectsATakenPort(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = taken.Close() })
 
-	_, err = listen(newHTTPServer(config.Config{ListenAddr: taken.Addr().String()}))
+	_, err = listen(newHTTPServer(config.Config{ListenAddr: taken.Addr().String()}, noop.NewTracerProvider()))
 	if err == nil || !strings.Contains(err.Error(), "address already in use") {
 		t.Fatalf("listen() on a taken port = %v, want address already in use", err)
 	}

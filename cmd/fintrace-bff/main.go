@@ -11,7 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/fintrace-project/fintrace-bff/internal/config"
+	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"github.com/fintrace-project/fintrace-bff/internal/server"
 )
 
@@ -28,7 +32,9 @@ func run() error {
 		return err
 	}
 	initLogging(cfg)
-	srv := newHTTPServer(cfg)
+	tp := newTracerProvider()
+	defer shutdownTracingProvider(tp)
+	srv := newHTTPServer(cfg, tp)
 
 	// A context that is cancelled when SIGINT (Ctrl+C) or SIGTERM (docker stop) arrives
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -43,14 +49,29 @@ func run() error {
 }
 
 func initLogging(cfg config.Config) {
-	slog.SetLogLoggerLevel(cfg.LogLevel)
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})
+	slog.SetDefault(slog.New(logging.WithTraceID(handler)))
 	slog.Info("Logging initialised", "log_level", cfg.LogLevel)
 }
 
-func newHTTPServer(cfg config.Config) *http.Server {
+func newTracerProvider() *sdktrace.TracerProvider {
+	return sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+}
+
+func shutdownTracingProvider(tp *sdktrace.TracerProvider) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := tp.Shutdown(ctx); err != nil {
+		slog.Warn("Tracer provider shutdown failed", "error", err)
+	}
+}
+
+func newHTTPServer(cfg config.Config, tp trace.TracerProvider) *http.Server {
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           server.RoutesHandler(),
+		Handler:           server.RoutesHandler(tp),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
