@@ -17,6 +17,7 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"github.com/fintrace-project/fintrace-bff/internal/server"
+	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
 func main() {
@@ -34,6 +35,13 @@ func run() error {
 	initLogging(cfg)
 	tp := newTracerProvider()
 	defer shutdownTracingProvider(tp)
+
+	auth, err := session.NewOIDC(context.Background(), cfg, newOutboundClient())
+	if err != nil {
+		return err
+	}
+	_ = auth // not used for now
+
 	srv := newHTTPServer(cfg, tp)
 
 	// A context that is cancelled when SIGINT (Ctrl+C) or SIGTERM (docker stop) arrives
@@ -46,6 +54,13 @@ func run() error {
 	}
 
 	return serve(ctx, srv, ln)
+}
+
+func newOutboundClient() *http.Client {
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: logging.NewCallLogger(http.DefaultTransport),
+	}
 }
 
 func initLogging(cfg config.Config) {
