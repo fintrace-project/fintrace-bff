@@ -13,14 +13,15 @@ import (
 )
 
 const healthzPath = "/healthz"
-const loginPath = "/auth/login"
+const authLoginPath = "/auth/login"
+const authCallbackPath = "/auth/callback"
 
 func RoutesHandler(tp trace.TracerProvider, auth *session.Auth) http.Handler {
 	mux := http.NewServeMux()
 
 	// Registered routes
 	registerHealth(mux)
-	registerLogin(mux, auth)
+	registerAuth(mux, auth)
 
 	// Wrappers
 	return withTracing(mux, tp)
@@ -48,8 +49,19 @@ func registerHealth(mux *http.ServeMux) {
 	slog.Info("route registered", "pattern", path)
 }
 
-func registerLogin(mux *http.ServeMux, auth *session.Auth) {
-	const path = "GET " + loginPath
+func registerAuth(mux *http.ServeMux, auth *session.Auth) {
+	registerAuthLogin(mux, auth)
+	registerAuthCallback(mux, auth)
+}
+
+func registerAuthLogin(mux *http.ServeMux, auth *session.Auth) {
+	const path = "GET " + authLoginPath
 	mux.HandleFunc(path, auth.Login)
+	slog.Info("route registered", "pattern", path)
+}
+
+func registerAuthCallback(mux *http.ServeMux, auth *session.Auth) {
+	const path = "GET " + authCallbackPath
+	mux.HandleFunc(path, auth.Callback)
 	slog.Info("route registered", "pattern", path)
 }

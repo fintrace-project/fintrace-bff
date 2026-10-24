@@ -36,8 +36,20 @@ func newRSAKey() *rsa.PrivateKey {
 // issuer defaulting to the server's own URL.
 func newFakeIssuer(t *testing.T, edit func(doc map[string]any)) *httptest.Server {
 	t.Helper()
+	return newFakeRealm(t, edit, nil)
+}
+
+// A token endpoint answers /token, given the issuer's URL to sign ID tokens for.
+type tokenEndpoint func(w http.ResponseWriter, r *http.Request, issuer string)
+
+func newFakeRealm(t *testing.T, edit func(doc map[string]any), token tokenEndpoint) *httptest.Server {
+	t.Helper()
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/token" && token != nil {
+			token(w, r, srv.URL)
+			return
+		}
 		if r.URL.Path == "/certs" {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
