@@ -289,7 +289,7 @@ func TestVerifierRefusesAnIDTokenItCannotTrust(t *testing.T) {
 			wantErr: "malformed jwt"},
 		{name: "HS256 keyed with the realm's public key",
 			token: func(t *testing.T, claims map[string]any) string {
-				return signToken(t, jose.HS256, issuerKey().PublicKey.N.Bytes(), claims)
+				return signToken(t, jose.HS256, issuerKey().N.Bytes(), claims)
 			},
 			wantErr: "malformed jwt"},
 	}
