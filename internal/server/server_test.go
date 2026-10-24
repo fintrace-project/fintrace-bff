@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
 func TestHealthz(t *testing.T) {
@@ -31,7 +33,7 @@ func TestHealthz(t *testing.T) {
 			wantStatus: http.StatusNotFound},
 	}
 	// A real server rather than a recorder: only a server drops the body of a HEAD response.
-	srv := httptest.NewServer(RoutesHandler(noop.NewTracerProvider()))
+	srv := httptest.NewServer(RoutesHandler(noop.NewTracerProvider(), &session.Auth{}))
 	t.Cleanup(srv.Close)
 
 	for _, tt := range tests {

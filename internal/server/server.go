@@ -8,15 +8,19 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
 const healthzPath = "/healthz"
+const loginPath = "/auth/login"
 
-func RoutesHandler(tp trace.TracerProvider) http.Handler {
+func RoutesHandler(tp trace.TracerProvider, auth *session.Auth) http.Handler {
 	mux := http.NewServeMux()
 
 	// Registered routes
 	registerHealth(mux)
+	registerLogin(mux, auth)
 
 	// Wrappers
 	return withTracing(mux, tp)
@@ -41,5 +45,11 @@ func registerHealth(mux *http.ServeMux) {
 	}
 
 	mux.HandleFunc(path, healthzHandler)
-	slog.Debug("route registered", "pattern", path)
+	slog.Info("route registered", "pattern", path)
+}
+
+func registerLogin(mux *http.ServeMux, auth *session.Auth) {
+	const path = "GET " + loginPath
+	mux.HandleFunc(path, auth.Login)
+	slog.Info("route registered", "pattern", path)
 }

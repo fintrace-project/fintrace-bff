@@ -94,9 +94,9 @@ func TestNewOIDCBuildsSignInFromDiscovery(t *testing.T) {
 	srv := newFakeIssuer(t, nil)
 	transport := &countingTransport{}
 
-	auth, err := NewOIDC(t.Context(), testConfig(t, srv.URL), &http.Client{Transport: transport})
+	auth, err := newOIDC(t.Context(), testConfig(t, srv.URL), &http.Client{Transport: transport})
 	if err != nil {
-		t.Fatalf("NewOIDC() error = %v", err)
+		t.Fatalf("newOIDC() error = %v", err)
 	}
 
 	if transport.calls.Load() == 0 {
@@ -147,10 +147,10 @@ func TestNewOIDCRefusesAnUnusableProvider(t *testing.T) {
 				issuer = failing.URL
 			}
 
-			auth, err := NewOIDC(t.Context(), testConfig(t, issuer), http.DefaultClient)
+			auth, err := newOIDC(t.Context(), testConfig(t, issuer), http.DefaultClient)
 
 			if err == nil {
-				t.Fatalf("NewOIDC() = %+v, want an error", auth)
+				t.Fatalf("newOIDC() = %+v, want an error", auth)
 			}
 			if !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("error = %q, want it to mention %q", err, tt.wantErr)
@@ -220,10 +220,10 @@ func TestVerifierAcceptsAnIDTokenFromTheRealm(t *testing.T) {
 			transport := &countingTransport{}
 			// Cancelled once startup is over, as main's context is not: key fetches must not depend on it.
 			ctx, cancel := context.WithCancel(t.Context())
-			auth, err := NewOIDC(ctx, testConfig(t, srv.URL), &http.Client{Transport: transport})
+			auth, err := newOIDC(ctx, testConfig(t, srv.URL), &http.Client{Transport: transport})
 			cancel()
 			if err != nil {
-				t.Fatalf("NewOIDC() error = %v", err)
+				t.Fatalf("newOIDC() error = %v", err)
 			}
 			claims := idTokenClaims(srv.URL)
 			if tt.edit != nil {
@@ -285,9 +285,9 @@ func TestVerifierRefusesAnIDTokenItCannotTrust(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := newFakeIssuer(t, nil)
-			auth, err := NewOIDC(t.Context(), testConfig(t, srv.URL), http.DefaultClient)
+			auth, err := newOIDC(t.Context(), testConfig(t, srv.URL), http.DefaultClient)
 			if err != nil {
-				t.Fatalf("NewOIDC() error = %v", err)
+				t.Fatalf("newOIDC() error = %v", err)
 			}
 			claims := idTokenClaims(srv.URL)
 			if tt.edit != nil {

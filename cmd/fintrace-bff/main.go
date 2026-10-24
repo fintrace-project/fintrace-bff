@@ -36,13 +36,12 @@ func run() error {
 	tp := newTracerProvider()
 	defer shutdownTracingProvider(tp)
 
-	auth, err := session.NewOIDC(context.Background(), cfg, newOutboundClient())
+	auth, err := session.NewAuth(context.Background(), cfg, newOutboundClient())
 	if err != nil {
 		return err
 	}
-	_ = auth // not used for now
 
-	srv := newHTTPServer(cfg, tp)
+	srv := newHTTPServer(cfg, tp, auth)
 
 	// A context that is cancelled when SIGINT (Ctrl+C) or SIGTERM (docker stop) arrives
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -83,10 +82,10 @@ func shutdownTracingProvider(tp *sdktrace.TracerProvider) {
 	}
 }
 
-func newHTTPServer(cfg config.Config, tp trace.TracerProvider) *http.Server {
+func newHTTPServer(cfg config.Config, tp trace.TracerProvider, auth *session.Auth) *http.Server {
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           server.RoutesHandler(tp),
+		Handler:           server.RoutesHandler(tp, auth),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

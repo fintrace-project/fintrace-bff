@@ -8,6 +8,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
 const incomingTraceID = "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -83,7 +85,7 @@ func TestTracingStartsANewTraceAndOnlyLinksTheIncomingOne(t *testing.T) {
 func TestTracingSkipsHealthz(t *testing.T) {
 	tp, sr := newRecordingProvider(t)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
-	RoutesHandler(tp).ServeHTTP(httptest.NewRecorder(), req)
+	RoutesHandler(tp, &session.Auth{}).ServeHTTP(httptest.NewRecorder(), req)
 
 	if spans := sr.Ended(); len(spans) != 0 {
 		t.Fatalf("ended spans = %d, want none for /healthz", len(spans))
