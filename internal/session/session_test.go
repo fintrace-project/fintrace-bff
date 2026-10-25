@@ -90,6 +90,8 @@ func testConfig(t *testing.T, issuer string) config.Config {
 		PublicOrigin: &url.URL{Scheme: "http", Host: "localhost:8100"},
 		ClientID:     "fintrace-bff",
 		ClientSecret: "test-secret",
+		SessionIdle:  testSessionIdle,
+		SessionMax:   testSessionMax,
 	}
 }
 

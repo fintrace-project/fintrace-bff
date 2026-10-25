@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 var required = []string{
@@ -39,6 +40,8 @@ func fullEnv() map[string]string {
 		"BFF_WEB_URL":                "http://fintrace-web:8080",
 		"BFF_OAUTH2_CLIENT_ID":       "fintrace-bff",
 		"BFF_OAUTH2_CLIENT_SECRET":   "s3cret",
+		"BFF_SESSION_IDLE":           "1h30m",
+		"BFF_SESSION_MAX":            "48h",
 	}
 }
 
@@ -54,10 +57,12 @@ func without(env map[string]string, names ...string) map[string]string {
 }
 
 func TestLoad(t *testing.T) {
-	withDefaults := func(listenAddr string, level slog.Level) Config {
+	withDefaults := func(listenAddr string, level slog.Level, idle, max time.Duration) Config {
 		return Config{
 			ListenAddr:   listenAddr,
 			LogLevel:     level,
+			SessionIdle:  idle,
+			SessionMax:   max,
 			IssuerURI:    mustParse(t, "https://idp.example/realms/r"),
 			PublicOrigin: mustParse(t, "https://fintrace.example"),
 			CoreURL:      mustParse(t, "http://fintrace-core:8080"),
@@ -75,12 +80,21 @@ func TestLoad(t *testing.T) {
 		{
 			name: "every variable set",
 			env:  fullEnv(),
-			want: withDefaults(":9000", slog.LevelDebug),
+			want: withDefaults(":9000", slog.LevelDebug, 90*time.Minute, 48*time.Hour),
 		},
 		{
 			name: "optional variables unset take their defaults",
-			env:  without(fullEnv(), "BFF_LISTEN_ADDR", "BFF_LOG_LEVEL"),
-			want: withDefaults(":8080", slog.LevelInfo),
+			env:  without(fullEnv(), "BFF_LISTEN_ADDR", "BFF_LOG_LEVEL", "BFF_SESSION_IDLE", "BFF_SESSION_MAX"),
+			want: withDefaults(":8080", slog.LevelInfo, 168*time.Hour, 720*time.Hour),
+		},
+		{
+			name: "session idle equal to the maximum",
+			env: func() map[string]string {
+				env := fullEnv()
+				env["BFF_SESSION_IDLE"] = "48h"
+				return env
+			}(),
+			want: withDefaults(":9000", slog.LevelDebug, 48*time.Hour, 48*time.Hour),
 		},
 	}
 	for _, tt := range tests {
@@ -244,6 +258,46 @@ func TestLoadAcceptsURLsWithPortAndPath(t *testing.T) {
 	if want := mustParse(t, "http://fintrace-core:8080/base"); !reflect.DeepEqual(got.CoreURL, want) {
 		t.Errorf("CoreURL = %+v, want %+v", got.CoreURL, want)
 	}
+}
+
+func TestLoadRejectsInvalidSessionDuration(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "garbage", value: "soon"},
+		{name: "a unit Go does not know", value: "7d"},
+		{name: "no unit", value: "60"},
+		{name: "zero", value: "0s"},
+		{name: "negative", value: "-1h"},
+	}
+	for _, tt := range tests {
+		for _, name := range []string{"BFF_SESSION_IDLE", "BFF_SESSION_MAX"} {
+			t.Run(tt.name+"/"+name, func(t *testing.T) {
+				env := fullEnv()
+				env[name] = tt.value
+				assertRejected(t, env, map[string]string{name: tt.value})
+
+				// The other variable is valid, and comparing against a rejected value must not blame it
+				_, err := Load(lookup(env))
+				other := "BFF_SESSION_MAX"
+				if name == other {
+					other = "BFF_SESSION_IDLE"
+				}
+				if strings.Contains(err.Error(), other) {
+					t.Errorf("error %q names %s, which is valid", err, other)
+				}
+			})
+		}
+	}
+}
+
+func TestLoadRejectsSessionIdleAboveMax(t *testing.T) {
+	env := fullEnv()
+	env["BFF_SESSION_IDLE"] = "720h"
+	env["BFF_SESSION_MAX"] = "168h"
+
+	assertRejected(t, env, map[string]string{"BFF_SESSION_IDLE": "720h", "BFF_SESSION_MAX": "168h"})
 }
 
 func TestLoadNamesEveryInvalidVariable(t *testing.T) {

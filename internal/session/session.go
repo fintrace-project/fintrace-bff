@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -17,7 +18,10 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 )
 
-const loginCookie = "__Host-fintrace-login"
+const (
+	loginCookie   = "__Host-fintrace-login"
+	sessionCookie = "__Host-fintrace-session"
+)
 
 type OIDC struct {
 	Verifier      *oidc.IDTokenVerifier
@@ -59,22 +63,33 @@ func newOIDC(ctx context.Context, cfg config.Config, client *http.Client) (*OIDC
 }
 
 type Auth struct {
-	oidc   *OIDC
-	client *http.Client
+	oidc          *OIDC
+	client        *http.Client
+	store         Store
+	sessionIdle   time.Duration
+	sessionMaxAge time.Duration
+	now           func() time.Time
 }
 
-func NewAuth(ctx context.Context, cfg config.Config, client *http.Client) (*Auth, error) {
+func NewAuth(ctx context.Context, cfg config.Config, client *http.Client, store Store) (*Auth, error) {
 	o, err := newOIDC(ctx, cfg, client)
 	if err != nil {
 		return nil, err
 	}
-	return &Auth{oidc: o, client: client}, nil
+	return &Auth{
+		oidc:          o,
+		client:        client,
+		store:         store,
+		sessionIdle:   cfg.SessionIdle,
+		sessionMaxAge: cfg.SessionMax,
+		now:           time.Now,
+	}, nil
 }
 
 func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 	lcv := newLoginCookieValue()
 
-	http.SetCookie(w, configureLoginCookie(lcv.cookieValue(), 300))
+	http.SetCookie(w, configureSecureCookie(loginCookie, lcv.cookieValue(), 300))
 
 	loginURL := a.oidc.OAuth2.AuthCodeURL(lcv.state, oidc.Nonce(lcv.nonce), oauth2.S256ChallengeOption(lcv.verifier))
 	w.Header().Set("Cache-Control", "no-store")
@@ -84,7 +99,7 @@ func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
 
 func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(loginCookie)
-	http.SetCookie(w, configureLoginCookie("", -1)) // Clean login cookie explicitly
+	http.SetCookie(w, configureSecureCookie(loginCookie, "", -1)) // Clean login cookie explicitly
 	if err != nil {
 		refuse(w, r, "Sign-in callback without a login cookie", err)
 		return
@@ -120,12 +135,12 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw, ok := token.Extra("id_token").(string)
-	if !ok || raw == "" {
+	rawToken, ok := token.Extra("id_token").(string)
+	if !ok || rawToken == "" {
 		refuse(w, r, "Token response carries no ID token", nil)
 		return
 	}
-	idToken, err := a.oidc.Verifier.Verify(ctx, raw)
+	idToken, err := a.oidc.Verifier.Verify(ctx, rawToken)
 	if err != nil {
 		refuse(w, r, "Sign-in ID token rejected", err)
 		return
@@ -135,14 +150,73 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.completeLogin(w, r, idToken)
+	a.completeLogin(w, r, idToken, token, rawToken)
 }
 
-func (a *Auth) completeLogin(w http.ResponseWriter, r *http.Request, idToken *oidc.IDToken) {
+func (a *Auth) completeLogin(w http.ResponseWriter, r *http.Request, idToken *oidc.IDToken, token *oauth2.Token, rawIDToken string) {
+	if c, _ := r.Cookie(sessionCookie); c != nil && c.Value != "" {
+		if err := a.store.Delete(r.Context(), asStoreKey(c.Value)); err != nil {
+			slog.WarnContext(r.Context(), "Old session not deleted", "error", err)
+		}
+	}
+
+	now := a.now()
+
+	s := Session{
+		Subject:       idToken.Subject,
+		AccessToken:   token.AccessToken,
+		RefreshToken:  token.RefreshToken,
+		AccessExpiry:  token.Expiry,
+		RefreshExpiry: refreshExpiry(token, now),
+		IDToken:       rawIDToken,
+		CreatedAt:     now,
+		LastSeen:      now,
+	}
+
+	id := rand.Text()
+	if err := a.store.Save(r.Context(), asStoreKey(id), s, deadline(s, a.sessionIdle, a.sessionMaxAge)); err != nil {
+		slog.ErrorContext(r.Context(), "Session not saved", "error", err)
+		http.Error(w, "sign-in unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	http.SetCookie(w, configureSecureCookie(sessionCookie, id, int(a.sessionMaxAge.Seconds())))
+
 	slog.InfoContext(r.Context(), "Signed in", "sub", idToken.Subject)
 	w.Header().Set("Cache-Control", "no-store")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (a *Auth) load(r *http.Request) (Session, StoreKey, error) {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return Session{}, "", ErrNoSession
+	}
+
+	key := asStoreKey(c.Value)
+	s, err := a.store.Load(r.Context(), key)
+	if err != nil {
+		return Session{}, "", err
+	}
+
+	now := a.now()
+	if now.Sub(s.LastSeen) >= time.Minute {
+		s.LastSeen = now
+		if err := a.store.Save(r.Context(), key, s, deadline(s, a.sessionIdle, a.sessionMaxAge)); err != nil {
+			slog.WarnContext(r.Context(), "Session idle deadline not extended", "error", err)
+		}
+	}
+
+	return s, key, nil
+}
+
+func refreshExpiry(token *oauth2.Token, now time.Time) time.Time {
+	secs, ok := token.Extra("refresh_expires_in").(float64)
+	if !ok || secs <= 0 {
+		return time.Time{}
+	}
+	return now.Add(time.Duration(secs) * time.Second)
 }
 
 type loginCookieValue struct {
@@ -174,9 +248,9 @@ func parseLoginCookie(cookie *http.Cookie) (loginCookieValue, error) {
 	return loginCookieValue{state: parts[0], nonce: parts[1], verifier: parts[2]}, nil
 }
 
-func configureLoginCookie(value string, maxAge int) *http.Cookie {
+func configureSecureCookie(name, value string, maxAge int) *http.Cookie {
 	return &http.Cookie{
-		Name:     loginCookie,
+		Name:     name,
 		Secure:   true,
 		Path:     "/",
 		Domain:   "",
@@ -194,4 +268,15 @@ func refuse(w http.ResponseWriter, r *http.Request, reason string, err error) {
 	}
 	slog.WarnContext(r.Context(), "Sign-in refused", attrs...)
 	http.Error(w, "sign-in failed", http.StatusBadRequest)
+}
+
+type Session struct {
+	Subject       string
+	AccessToken   string
+	RefreshToken  string
+	AccessExpiry  time.Time
+	RefreshExpiry time.Time
+	IDToken       string
+	CreatedAt     time.Time
+	LastSeen      time.Time
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"github.com/fintrace-project/fintrace-bff/internal/server"
 	"github.com/fintrace-project/fintrace-bff/internal/session"
+	"github.com/fintrace-project/fintrace-bff/internal/session/memstore"
 )
 
 func main() {
@@ -36,16 +37,19 @@ func run() error {
 	tp := newTracerProvider()
 	defer shutdownTracingProvider(tp)
 
-	auth, err := session.NewAuth(context.Background(), cfg, newOutboundClient())
+	// A context that is cancelled when SIGINT (Ctrl+C) or SIGTERM (docker stop) arrives
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	store := memstore.New(time.Now)
+	go store.RunEviction(ctx, time.Minute)
+
+	auth, err := session.NewAuth(context.Background(), cfg, newOutboundClient(), store)
 	if err != nil {
 		return err
 	}
 
 	srv := newHTTPServer(cfg, tp, auth)
-
-	// A context that is cancelled when SIGINT (Ctrl+C) or SIGTERM (docker stop) arrives
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	ln, err := listen(srv)
 	if err != nil {

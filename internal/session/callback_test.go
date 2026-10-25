@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
 )
@@ -19,6 +20,8 @@ type tokenStub struct {
 	key         any
 	invalid     bool
 	omitIDToken bool
+
+	refreshExpiresIn any
 
 	mu    sync.Mutex
 	calls int
@@ -43,7 +46,10 @@ func (s *tokenStub) serve(w http.ResponseWriter, r *http.Request, issuer string)
 		_, _ = io.WriteString(w, `{"error":"invalid_grant","error_description":"Code not valid"}`)
 		return
 	}
-	body := map[string]any{"access_token": "access-1", "token_type": "Bearer", "expires_in": 300}
+	body := map[string]any{"access_token": "access-1", "refresh_token": "refresh-1", "token_type": "Bearer", "expires_in": 300}
+	if s.refreshExpiresIn != nil {
+		body["refresh_expires_in"] = s.refreshExpiresIn
+	}
 	if !s.omitIDToken {
 		claims := idTokenClaims(issuer)
 		claims["nonce"] = s.nonce
@@ -67,7 +73,7 @@ func startLogin(t *testing.T, stub *tokenStub) (*Auth, *http.Cookie, loginCookie
 	t.Helper()
 	stub.t = t
 	srv := newFakeRealm(t, nil, stub.serve)
-	a, err := NewAuth(t.Context(), testConfig(t, srv.URL), http.DefaultClient)
+	a, err := NewAuth(t.Context(), testConfig(t, srv.URL), http.DefaultClient, newFakeStore(time.Now))
 	if err != nil {
 		t.Fatalf("NewAuth() error = %v", err)
 	}
@@ -82,11 +88,14 @@ func startLogin(t *testing.T, stub *tokenStub) (*Auth, *http.Cookie, loginCookie
 	return a, cookie, lcv
 }
 
-func callback(t *testing.T, a *Auth, cookie *http.Cookie, query url.Values) *http.Response {
+func callback(t *testing.T, a *Auth, cookie *http.Cookie, query url.Values, more ...*http.Cookie) *http.Response {
 	t.Helper()
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/callback?"+query.Encode(), nil)
 	if cookie != nil {
 		req.AddCookie(&http.Cookie{Name: cookie.Name, Value: cookie.Value})
+	}
+	for _, c := range more {
+		req.AddCookie(c)
 	}
 	rec := httptest.NewRecorder()
 	a.Callback(rec, req)
@@ -213,6 +222,12 @@ func TestCallbackRefusesWhatItCannotTrust(t *testing.T) {
 			}
 			if !loginCookieCleared(resp) {
 				t.Error("the login cookie was not cleared")
+			}
+			if c := sessionCookieIn(resp); c != nil {
+				t.Errorf("a refusal set a session cookie: %+v", c)
+			}
+			if n := len(storeOf(a).entries); n != 0 {
+				t.Errorf("a refusal saved %d sessions", n)
 			}
 			if calls, _, _, _ := stub.recorded(); (calls > 0) != tt.wantExchange {
 				t.Errorf("token endpoint called %d times, want an exchange: %t", calls, tt.wantExchange)

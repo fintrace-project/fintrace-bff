@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"time"
 )
 
 type Config struct {
-	ListenAddr   string     // BFF_LISTEN_ADDR
-	LogLevel     slog.Level // BFF_LOG_LEVEL
-	IssuerURI    *url.URL   // FINTRACE_OAUTH2_ISSUER_URI
-	CoreURL      *url.URL   // BFF_CORE_URL
-	ImporterURL  *url.URL   // BFF_IMPORTER_URL
-	WebURL       *url.URL   // BFF_WEB_URL
-	PublicOrigin *url.URL   // BFF_PUBLIC_ORIGIN
-	ClientID     string     // BFF_OAUTH2_CLIENT_ID
-	ClientSecret string     // BFF_OAUTH2_CLIENT_SECRET
+	ListenAddr   string        // BFF_LISTEN_ADDR
+	LogLevel     slog.Level    // BFF_LOG_LEVEL
+	IssuerURI    *url.URL      // FINTRACE_OAUTH2_ISSUER_URI
+	CoreURL      *url.URL      // BFF_CORE_URL
+	ImporterURL  *url.URL      // BFF_IMPORTER_URL
+	WebURL       *url.URL      // BFF_WEB_URL
+	PublicOrigin *url.URL      // BFF_PUBLIC_ORIGIN
+	ClientID     string        // BFF_OAUTH2_CLIENT_ID
+	ClientSecret string        // BFF_OAUTH2_CLIENT_SECRET
+	SessionIdle  time.Duration // BFF_SESSION_IDLE
+	SessionMax   time.Duration // BFF_SESSION_MAX
 }
 
 type errorCollector struct {
@@ -45,6 +48,13 @@ func Load(getenv func(string) string) (Config, error) {
 		PublicOrigin: getRequiredEnvAsURL(getenv, "BFF_PUBLIC_ORIGIN", ec, noPath),
 		ClientID:     getRequiredEnv(getenv, "BFF_OAUTH2_CLIENT_ID", ec),
 		ClientSecret: getRequiredEnv(getenv, "BFF_OAUTH2_CLIENT_SECRET", ec),
+		SessionIdle:  getOptionalEnvAsDuration(getenv, "BFF_SESSION_IDLE", "168h", ec),
+		SessionMax:   getOptionalEnvAsDuration(getenv, "BFF_SESSION_MAX", "720h", ec),
+	}
+
+	if cfg.SessionIdle > 0 && cfg.SessionMax > 0 && cfg.SessionIdle > cfg.SessionMax {
+		ec.errs = append(ec.errs, fmt.Errorf("BFF_SESSION_IDLE (%s) must not exceed BFF_SESSION_MAX (%s)",
+			cfg.SessionIdle, cfg.SessionMax))
 	}
 
 	if err := errors.Join(ec.errs...); err != nil {
@@ -52,6 +62,21 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func getOptionalEnvAsDuration(getenv func(string) string, envName, defValue string, ec *errorCollector) time.Duration {
+	env := getOptionalEnv(getenv, envName, defValue)
+
+	dur, err := time.ParseDuration(env)
+	if err != nil {
+		ec.errs = append(ec.errs, fmt.Errorf("%s: %w", envName, err))
+		return 0
+	}
+	if dur <= 0 {
+		ec.errs = append(ec.errs, fmt.Errorf("%s: must be positive, got %q", envName, env))
+		return 0
+	}
+	return dur
 }
 
 func getRequiredEnvAsURL(getenv func(string) string, envName string, ec *errorCollector, extraURLRules ...urlRule) *url.URL {
