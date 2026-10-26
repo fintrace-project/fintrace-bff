@@ -25,7 +25,9 @@ func newLoadFixture(t *testing.T) *loadFixture {
 	f.store = newFakeStore(clock)
 	f.a = &Auth{store: f.store, sessionIdle: testSessionIdle, sessionMaxAge: testSessionMax, now: clock}
 
-	s := Session{Subject: "user-1", AccessToken: "access-1", CreatedAt: signedIn, LastSeen: signedIn}
+	// An access token outliving the session, so these tests never refresh
+	s := Session{Subject: "user-1", AccessToken: "access-1", AccessExpiry: signedIn.Add(testSessionMax),
+		CreatedAt: signedIn, LastSeen: signedIn}
 	if err := f.store.Save(t.Context(), asStoreKey(loadTestID), s, deadline(s, testSessionIdle, testSessionMax)); err != nil {
 		t.Fatal(err)
 	}

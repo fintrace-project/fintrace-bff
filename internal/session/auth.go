@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 )
 
@@ -15,6 +17,7 @@ type Auth struct {
 	sessionIdle   time.Duration
 	sessionMaxAge time.Duration
 	now           func() time.Time
+	sessionLoads  singleflight.Group
 }
 
 func NewAuth(ctx context.Context, cfg config.Config, client *http.Client, store Store) (*Auth, error) {
