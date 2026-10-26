@@ -15,6 +15,7 @@ import (
 const healthzPath = "/healthz"
 const authLoginPath = "/auth/login"
 const authCallbackPath = "/auth/callback"
+const authSignOutPath = "/auth/sign-out"
 
 func RoutesHandler(tp trace.TracerProvider, auth *session.Auth) http.Handler {
 	mux := http.NewServeMux()
@@ -52,6 +53,7 @@ func registerHealth(mux *http.ServeMux) {
 func registerAuth(mux *http.ServeMux, auth *session.Auth) {
 	registerAuthLogin(mux, auth)
 	registerAuthCallback(mux, auth)
+	registerAuthSignOut(mux, auth)
 }
 
 func registerAuthLogin(mux *http.ServeMux, auth *session.Auth) {
@@ -63,5 +65,11 @@ func registerAuthLogin(mux *http.ServeMux, auth *session.Auth) {
 func registerAuthCallback(mux *http.ServeMux, auth *session.Auth) {
 	const path = "GET " + authCallbackPath
 	mux.HandleFunc(path, auth.Callback)
+	slog.Info("route registered", "pattern", path)
+}
+
+func registerAuthSignOut(mux *http.ServeMux, auth *session.Auth) {
+	const path = "POST " + authSignOutPath
+	mux.HandleFunc(path, auth.SignOut)
 	slog.Info("route registered", "pattern", path)
 }

@@ -13,9 +13,10 @@ import (
 )
 
 type OIDC struct {
-	Verifier      *oidc.IDTokenVerifier
-	OAuth2        oauth2.Config
-	EndSessionURL *url.URL
+	Verifier              *oidc.IDTokenVerifier
+	OAuth2                oauth2.Config
+	EndSessionURL         *url.URL
+	PostLogoutRedirectURL string
 }
 
 func newOIDC(ctx context.Context, cfg config.Config, client *http.Client) (*OIDC, error) {
@@ -47,6 +48,7 @@ func newOIDC(ctx context.Context, cfg config.Config, client *http.Client) (*OIDC
 			RedirectURL:  cfg.PublicOrigin.JoinPath("/auth/callback").String(),
 			Scopes:       []string{oidc.ScopeOpenID},
 		},
-		EndSessionURL: endSession,
+		EndSessionURL:         endSession,
+		PostLogoutRedirectURL: cfg.PublicOrigin.JoinPath("/").String(),
 	}, nil
 }

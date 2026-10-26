@@ -11,6 +11,24 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
+func TestSignOutIsPostOnly(t *testing.T) {
+	srv := httptest.NewServer(RoutesHandler(noop.NewTracerProvider(), &session.Auth{}))
+	t.Cleanup(srv.Close)
+
+	resp, err := srv.Client().Get(srv.URL + "/auth/sign-out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d, or a link could sign a user out", resp.StatusCode, http.StatusMethodNotAllowed)
+	}
+	if got := resp.Header.Get("Allow"); got != "POST" {
+		t.Errorf("Allow = %q, want %q", got, "POST")
+	}
+}
+
 func TestHealthz(t *testing.T) {
 	tests := []struct {
 		name        string

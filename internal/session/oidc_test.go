@@ -123,6 +123,7 @@ func TestNewOIDCBuildsSignInFromDiscovery(t *testing.T) {
 		{"ClientID", auth.OAuth2.ClientID, "fintrace-bff"},
 		{"Scopes", strings.Join(auth.OAuth2.Scopes, " "), "openid"},
 		{"EndSessionURL", auth.EndSessionURL.String(), srv.URL + "/logout"},
+		{"PostLogoutRedirectURL", auth.PostLogoutRedirectURL, "http://localhost:8100/"},
 	}
 	for _, c := range checks {
 		if c.got != c.want {
