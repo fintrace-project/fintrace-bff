@@ -13,33 +13,33 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func (a *Auth) Login(w http.ResponseWriter, r *http.Request) {
-	lcv := newLoginCookieValue()
+func (a *Auth) SignIn(w http.ResponseWriter, r *http.Request) {
+	scv := newSignInCookieValue()
 
-	http.SetCookie(w, configureSecureCookie(loginCookie, lcv.cookieValue(), 300))
+	http.SetCookie(w, configureSecureCookie(signInCookie, scv.cookieValue(), 300))
 
-	loginURL := a.oidc.OAuth2.AuthCodeURL(lcv.state, oidc.Nonce(lcv.nonce), oauth2.S256ChallengeOption(lcv.verifier))
+	authURL := a.oidc.OAuth2.AuthCodeURL(scv.state, oidc.Nonce(scv.nonce), oauth2.S256ChallengeOption(scv.verifier))
 	w.Header().Set("Cache-Control", "no-store")
 
-	http.Redirect(w, r, loginURL, http.StatusFound)
+	http.Redirect(w, r, authURL, http.StatusFound)
 }
 
 func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(loginCookie)
-	http.SetCookie(w, configureSecureCookie(loginCookie, "", -1)) // Clean login cookie explicitly
+	cookie, err := r.Cookie(signInCookie)
+	http.SetCookie(w, configureSecureCookie(signInCookie, "", -1)) // Clean sign-in cookie explicitly
 	if err != nil {
-		refuse(w, r, "Sign-in callback without a login cookie", err)
+		refuse(w, r, "Sign-in callback without a sign-in cookie", err)
 		return
 	}
 
-	lcv, err := parseLoginCookie(cookie)
+	scv, err := parseSignInCookie(cookie)
 	if err != nil {
-		refuse(w, r, "Sign-in login cookie is malformed", err)
+		refuse(w, r, "Sign-in cookie is malformed", err)
 		return
 	}
 
 	query := r.URL.Query()
-	if subtle.ConstantTimeCompare([]byte(query.Get("state")), []byte(lcv.state)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(query.Get("state")), []byte(scv.state)) != 1 {
 		refuse(w, r, "Sign-in state does not match", nil)
 		return
 	}
@@ -56,7 +56,7 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, a.client)
-	token, err := a.oidc.OAuth2.Exchange(ctx, code, oauth2.VerifierOption(lcv.verifier))
+	token, err := a.oidc.OAuth2.Exchange(ctx, code, oauth2.VerifierOption(scv.verifier))
 	if err != nil {
 		refuse(w, r, "Sign-in code exchange failed", err)
 		return
@@ -72,15 +72,15 @@ func (a *Auth) Callback(w http.ResponseWriter, r *http.Request) {
 		refuse(w, r, "Sign-in ID token rejected", err)
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(lcv.nonce)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(scv.nonce)) != 1 {
 		refuse(w, r, "Sign-in nonce does not match", nil)
 		return
 	}
 
-	a.completeLogin(w, r, idToken, token, rawToken)
+	a.completeSignIn(w, r, idToken, token, rawToken)
 }
 
-func (a *Auth) completeLogin(w http.ResponseWriter, r *http.Request, idToken *oidc.IDToken, token *oauth2.Token, rawIDToken string) {
+func (a *Auth) completeSignIn(w http.ResponseWriter, r *http.Request, idToken *oidc.IDToken, token *oauth2.Token, rawIDToken string) {
 	if c, _ := r.Cookie(sessionCookie); c != nil && c.Value != "" {
 		if err := a.store.Delete(r.Context(), asStoreKey(c.Value)); err != nil {
 			slog.WarnContext(r.Context(), "Old session not deleted", "error", err)

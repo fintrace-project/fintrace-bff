@@ -21,10 +21,10 @@ func newTestAuth() *Auth {
 	}}}
 }
 
-func login(t *testing.T, a *Auth) (*http.Response, *url.URL, *http.Cookie) {
+func requestSignIn(t *testing.T, a *Auth) (*http.Response, *url.URL, *http.Cookie) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	a.Login(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login", nil))
+	a.SignIn(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sign-in", nil))
 	resp := rec.Result()
 
 	location, err := url.Parse(resp.Header.Get("Location"))
@@ -32,14 +32,14 @@ func login(t *testing.T, a *Auth) (*http.Response, *url.URL, *http.Cookie) {
 		t.Fatalf("Location: %v", err)
 	}
 	cookies := resp.Cookies()
-	if len(cookies) != 1 || cookies[0].Name != loginCookie {
-		t.Fatalf("cookies = %v, want only %s", cookies, loginCookie)
+	if len(cookies) != 1 || cookies[0].Name != signInCookie {
+		t.Fatalf("cookies = %v, want only %s", cookies, signInCookie)
 	}
 	return resp, location, cookies[0]
 }
 
-func TestLoginRedirectsToTheRealmWithPKCE(t *testing.T) {
-	resp, location, cookie := login(t, newTestAuth())
+func TestSignInRedirectsToTheRealmWithPKCE(t *testing.T) {
+	resp, location, cookie := requestSignIn(t, newTestAuth())
 
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusFound)
@@ -84,8 +84,8 @@ func TestLoginRedirectsToTheRealmWithPKCE(t *testing.T) {
 	}
 }
 
-func TestLoginCookieMeetsTheHostPrefixRules(t *testing.T) {
-	_, _, cookie := login(t, newTestAuth())
+func TestSignInCookieMeetsTheHostPrefixRules(t *testing.T) {
+	_, _, cookie := requestSignIn(t, newTestAuth())
 
 	if !cookie.Secure || !cookie.HttpOnly {
 		t.Errorf("Secure = %t, HttpOnly = %t, want both", cookie.Secure, cookie.HttpOnly)
@@ -101,15 +101,15 @@ func TestLoginCookieMeetsTheHostPrefixRules(t *testing.T) {
 	}
 }
 
-func TestLoginIssuesFreshValuesEachTime(t *testing.T) {
+func TestSignInIssuesFreshValuesEachTime(t *testing.T) {
 	a := newTestAuth()
-	_, _, first := login(t, a)
-	_, _, second := login(t, a)
+	_, _, first := requestSignIn(t, a)
+	_, _, second := requestSignIn(t, a)
 
 	firstParts, secondParts := strings.Split(first.Value, "."), strings.Split(second.Value, ".")
 	for i, name := range []string{"state", "nonce", "verifier"} {
 		if firstParts[i] == secondParts[i] {
-			t.Errorf("%s repeated across logins: %q", name, firstParts[i])
+			t.Errorf("%s repeated across sign-ins: %q", name, firstParts[i])
 		}
 	}
 }

@@ -13,7 +13,7 @@ import (
 )
 
 const healthzPath = "/healthz"
-const authLoginPath = "/auth/login"
+const authSignInPath = "/auth/sign-in"
 const authCallbackPath = "/auth/callback"
 const authSignOutPath = "/auth/sign-out"
 
@@ -51,14 +51,14 @@ func registerHealth(mux *http.ServeMux) {
 }
 
 func registerAuth(mux *http.ServeMux, auth *session.Auth) {
-	registerAuthLogin(mux, auth)
+	registerAuthSignIn(mux, auth)
 	registerAuthCallback(mux, auth)
 	registerAuthSignOut(mux, auth)
 }
 
-func registerAuthLogin(mux *http.ServeMux, auth *session.Auth) {
-	const path = "GET " + authLoginPath
-	mux.HandleFunc(path, auth.Login)
+func registerAuthSignIn(mux *http.ServeMux, auth *session.Auth) {
+	const path = "GET " + authSignInPath
+	mux.HandleFunc(path, auth.SignIn)
 	slog.Info("route registered", "pattern", path)
 }
 

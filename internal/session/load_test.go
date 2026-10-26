@@ -72,7 +72,7 @@ func TestLoadWithoutASessionCookie(t *testing.T) {
 	}{
 		{name: "no cookie"},
 		{name: "an empty cookie", cookies: []*http.Cookie{{Name: sessionCookie, Value: ""}}},
-		{name: "only the login cookie", cookies: []*http.Cookie{{Name: loginCookie, Value: loadTestID}}},
+		{name: "only the sign-in cookie", cookies: []*http.Cookie{{Name: signInCookie, Value: loadTestID}}},
 		{name: "an id the store does not know", cookies: []*http.Cookie{{Name: sessionCookie, Value: "unknown"}}},
 	}
 	for _, tt := range tests {

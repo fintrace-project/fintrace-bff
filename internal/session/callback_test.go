@@ -68,8 +68,8 @@ func (s *tokenStub) recorded() (calls int, form url.Values, user, pass string) {
 	return s.calls, s.form, s.user, s.pass
 }
 
-// Starts a real login against a fake realm, so the callback sees the cookie and state Login issued.
-func startLogin(t *testing.T, stub *tokenStub) (*Auth, *http.Cookie, loginCookieValue) {
+// Starts a real sign-in against a fake realm, so the callback sees the cookie and state SignIn issued.
+func startSignIn(t *testing.T, stub *tokenStub) (*Auth, *http.Cookie, signInCookieValue) {
 	t.Helper()
 	stub.t = t
 	srv := newFakeRealm(t, nil, stub.serve)
@@ -77,15 +77,15 @@ func startLogin(t *testing.T, stub *tokenStub) (*Auth, *http.Cookie, loginCookie
 	if err != nil {
 		t.Fatalf("NewAuth() error = %v", err)
 	}
-	_, _, cookie := login(t, a)
-	lcv, err := parseLoginCookie(cookie)
+	_, _, cookie := requestSignIn(t, a)
+	scv, err := parseSignInCookie(cookie)
 	if err != nil {
-		t.Fatalf("Login's own cookie does not parse: %v", err)
+		t.Fatalf("SignIn's own cookie does not parse: %v", err)
 	}
 	if stub.nonce == "" {
-		stub.nonce = lcv.nonce
+		stub.nonce = scv.nonce
 	}
-	return a, cookie, lcv
+	return a, cookie, scv
 }
 
 func callback(t *testing.T, a *Auth, cookie *http.Cookie, query url.Values, more ...*http.Cookie) *http.Response {
@@ -102,9 +102,9 @@ func callback(t *testing.T, a *Auth, cookie *http.Cookie, query url.Values, more
 	return rec.Result()
 }
 
-func loginCookieCleared(resp *http.Response) bool {
+func signInCookieCleared(resp *http.Response) bool {
 	for _, c := range resp.Cookies() {
-		if c.Name == loginCookie && c.MaxAge < 0 {
+		if c.Name == signInCookie && c.MaxAge < 0 {
 			return true
 		}
 	}
@@ -113,9 +113,9 @@ func loginCookieCleared(resp *http.Response) bool {
 
 func TestCallbackExchangesTheCodeAndSignsIn(t *testing.T) {
 	stub := &tokenStub{}
-	a, cookie, lcv := startLogin(t, stub)
+	a, cookie, scv := startSignIn(t, stub)
 
-	resp := callback(t, a, cookie, url.Values{"state": {lcv.state}, "code": {"code-1"}})
+	resp := callback(t, a, cookie, url.Values{"state": {scv.state}, "code": {"code-1"}})
 
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusSeeOther)
@@ -126,8 +126,8 @@ func TestCallbackExchangesTheCodeAndSignsIn(t *testing.T) {
 	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
 		t.Errorf("Cache-Control = %q, want no-store", got)
 	}
-	if !loginCookieCleared(resp) {
-		t.Error("the login cookie was not cleared")
+	if !signInCookieCleared(resp) {
+		t.Error("the sign-in cookie was not cleared")
 	}
 
 	calls, form, user, pass := stub.recorded()
@@ -137,7 +137,7 @@ func TestCallbackExchangesTheCodeAndSignsIn(t *testing.T) {
 	for name, want := range map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          "code-1",
-		"code_verifier": lcv.verifier,
+		"code_verifier": scv.verifier,
 		"redirect_uri":  "http://localhost:8100/auth/callback",
 	} {
 		if got := form.Get(name); got != want {
@@ -151,7 +151,7 @@ func TestCallbackExchangesTheCodeAndSignsIn(t *testing.T) {
 
 func TestCallbackRefusesWhatItCannotTrust(t *testing.T) {
 	const (
-		rightState = "<issued>" // replaced by the state Login issued
+		rightState = "<issued>" // replaced by the state SignIn issued
 		wrongState = "not-the-state"
 	)
 	tests := []struct {
@@ -161,10 +161,10 @@ func TestCallbackRefusesWhatItCannotTrust(t *testing.T) {
 		query        url.Values
 		wantExchange bool
 	}{
-		{name: "no login cookie",
+		{name: "no sign-in cookie",
 			cookie: func(*http.Cookie) *http.Cookie { return nil },
 			query:  url.Values{"state": {rightState}, "code": {"code-1"}}},
-		{name: "a malformed login cookie",
+		{name: "a malformed sign-in cookie",
 			cookie: func(c *http.Cookie) *http.Cookie { return &http.Cookie{Name: c.Name, Value: "only.two"} },
 			query:  url.Values{"state": {rightState}, "code": {"code-1"}}},
 		{name: "another state",
@@ -201,12 +201,12 @@ func TestCallbackRefusesWhatItCannotTrust(t *testing.T) {
 			if stub == nil {
 				stub = &tokenStub{}
 			}
-			a, cookie, lcv := startLogin(t, stub)
+			a, cookie, scv := startSignIn(t, stub)
 			if tt.cookie != nil {
 				cookie = tt.cookie(cookie)
 			}
 			if tt.query.Get("state") == rightState {
-				tt.query.Set("state", lcv.state)
+				tt.query.Set("state", scv.state)
 			}
 
 			resp := callback(t, a, cookie, tt.query)
@@ -220,8 +220,8 @@ func TestCallbackRefusesWhatItCannotTrust(t *testing.T) {
 			if resp.Header.Get("Location") != "" {
 				t.Error("a refusal redirected")
 			}
-			if !loginCookieCleared(resp) {
-				t.Error("the login cookie was not cleared")
+			if !signInCookieCleared(resp) {
+				t.Error("the sign-in cookie was not cleared")
 			}
 			if c := sessionCookieIn(resp); c != nil {
 				t.Errorf("a refusal set a session cookie: %+v", c)

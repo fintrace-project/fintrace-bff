@@ -34,9 +34,9 @@ func sessionCookieIn(resp *http.Response) *http.Cookie {
 // Signs in through the fake realm with the clock stopped at signedIn.
 func signIn(t *testing.T, stub *tokenStub, more ...*http.Cookie) (*Auth, *http.Response) {
 	t.Helper()
-	a, cookie, lcv := startLogin(t, stub)
+	a, cookie, scv := startSignIn(t, stub)
 	a.now = func() time.Time { return signedIn }
-	return a, callback(t, a, cookie, url.Values{"state": {lcv.state}, "code": {"code-1"}}, more...)
+	return a, callback(t, a, cookie, url.Values{"state": {scv.state}, "code": {"code-1"}}, more...)
 }
 
 func TestCallbackIssuesASessionCookie(t *testing.T) {
@@ -119,14 +119,14 @@ func TestCallbackWithoutARefreshExpiryUsesTheBFFsLimits(t *testing.T) {
 
 func TestCallbackReplacesAnEarlierSession(t *testing.T) {
 	stub := &tokenStub{}
-	a, cookie, lcv := startLogin(t, stub)
+	a, cookie, scv := startSignIn(t, stub)
 	f := storeOf(a)
 	const oldID = "old-session-id"
 	if err := f.Save(t.Context(), asStoreKey(oldID), Session{Subject: "user-1"}, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 
-	resp := callback(t, a, cookie, url.Values{"state": {lcv.state}, "code": {"code-1"}},
+	resp := callback(t, a, cookie, url.Values{"state": {scv.state}, "code": {"code-1"}},
 		&http.Cookie{Name: sessionCookie, Value: oldID})
 
 	if _, ok := f.entries[asStoreKey(oldID)]; ok {
@@ -143,11 +143,11 @@ func TestCallbackReplacesAnEarlierSession(t *testing.T) {
 
 func TestCallbackSignsInEvenIfTheEarlierSessionCannotBeDeleted(t *testing.T) {
 	stub := &tokenStub{}
-	a, cookie, lcv := startLogin(t, stub)
+	a, cookie, scv := startSignIn(t, stub)
 	f := storeOf(a)
 	f.deleteErr = errors.New("store unavailable")
 
-	resp := callback(t, a, cookie, url.Values{"state": {lcv.state}, "code": {"code-1"}},
+	resp := callback(t, a, cookie, url.Values{"state": {scv.state}, "code": {"code-1"}},
 		&http.Cookie{Name: sessionCookie, Value: "old-session-id"})
 
 	if resp.StatusCode != http.StatusSeeOther {
@@ -160,10 +160,10 @@ func TestCallbackSignsInEvenIfTheEarlierSessionCannotBeDeleted(t *testing.T) {
 
 func TestCallbackAnswers503WhenTheSessionCannotBeSaved(t *testing.T) {
 	stub := &tokenStub{}
-	a, cookie, lcv := startLogin(t, stub)
+	a, cookie, scv := startSignIn(t, stub)
 	storeOf(a).saveErr = errors.New("store unavailable")
 
-	resp := callback(t, a, cookie, url.Values{"state": {lcv.state}, "code": {"code-1"}})
+	resp := callback(t, a, cookie, url.Values{"state": {scv.state}, "code": {"code-1"}})
 
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
@@ -174,8 +174,8 @@ func TestCallbackAnswers503WhenTheSessionCannotBeSaved(t *testing.T) {
 	if c := sessionCookieIn(resp); c != nil {
 		t.Errorf("a session cookie was set for a session that was not saved: %+v", c)
 	}
-	if !loginCookieCleared(resp) {
-		t.Error("the login cookie was not cleared")
+	if !signInCookieCleared(resp) {
+		t.Error("the sign-in cookie was not cleared")
 	}
 }
 
