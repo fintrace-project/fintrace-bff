@@ -49,7 +49,10 @@ func run() error {
 		return err
 	}
 
-	srv := newHTTPServer(cfg, tp, auth)
+	srv, err := newHTTPServer(cfg, tp, auth)
+	if err != nil {
+		return err
+	}
 
 	ln, err := listen(srv)
 	if err != nil {
@@ -86,17 +89,21 @@ func shutdownTracingProvider(tp *sdktrace.TracerProvider) {
 	}
 }
 
-func newHTTPServer(cfg config.Config, tp trace.TracerProvider, auth *session.Auth) *http.Server {
+func newHTTPServer(cfg config.Config, tp trace.TracerProvider, auth *session.Auth) (*http.Server, error) {
+	handler, err := server.RoutesHandler(tp, auth, cfg)
+	if err != nil {
+		return nil, err
+	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           server.RoutesHandler(tp, auth),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
-	return srv
+	return srv, nil
 }
 
 func listen(srv *http.Server) (net.Listener, error) {

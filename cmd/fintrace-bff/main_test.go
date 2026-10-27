@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,22 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
+
+func testConfig(listenAddr string) config.Config {
+	return config.Config{
+		ListenAddr:   listenAddr,
+		PublicOrigin: &url.URL{Scheme: "https", Host: "fintrace.example"},
+	}
+}
+
+func mustHTTPServer(t *testing.T, cfg config.Config) *http.Server {
+	t.Helper()
+	srv, err := newHTTPServer(cfg, noop.NewTracerProvider(), &session.Auth{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
 
 func startServe(t *testing.T, srv *http.Server) (addr string, cancel context.CancelFunc, done <-chan error) {
 	t.Helper()
@@ -53,7 +70,7 @@ func get(t *testing.T, url string) (int, string) {
 }
 
 func TestServeAnswersUntilCancelledThenShutsDownCleanly(t *testing.T) {
-	addr, cancel, done := startServe(t, newHTTPServer(config.Config{ListenAddr: "127.0.0.1:0"}, noop.NewTracerProvider(), &session.Auth{}))
+	addr, cancel, done := startServe(t, mustHTTPServer(t, testConfig("127.0.0.1:0")))
 
 	if code, body := get(t, addr+"/healthz"); code != http.StatusOK || body != `{"status":"UP"}` {
 		t.Fatalf("GET /healthz = %d %q, want 200 {\"status\":\"UP\"}", code, body)
@@ -118,7 +135,7 @@ func TestServeLetsARequestInFlightFinish(t *testing.T) {
 }
 
 func TestServeReportsAServerThatCannotRun(t *testing.T) {
-	srv := newHTTPServer(config.Config{ListenAddr: "127.0.0.1:0"}, noop.NewTracerProvider(), &session.Auth{})
+	srv := mustHTTPServer(t, testConfig("127.0.0.1:0"))
 	ln, err := listen(srv)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +155,7 @@ func TestListenRejectsATakenPort(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = taken.Close() })
 
-	_, err = listen(newHTTPServer(config.Config{ListenAddr: taken.Addr().String()}, noop.NewTracerProvider(), &session.Auth{}))
+	_, err = listen(mustHTTPServer(t, testConfig(taken.Addr().String())))
 	if err == nil || !strings.Contains(err.Error(), "address already in use") {
 		t.Fatalf("listen() on a taken port = %v, want address already in use", err)
 	}

@@ -6,13 +6,23 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
+func mustRoutes(t *testing.T, tp trace.TracerProvider) http.Handler {
+	t.Helper()
+	h, err := RoutesHandler(tp, &session.Auth{}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
 func TestSignOutIsPostOnly(t *testing.T) {
-	srv := httptest.NewServer(RoutesHandler(noop.NewTracerProvider(), &session.Auth{}))
+	srv := httptest.NewServer(mustRoutes(t, noop.NewTracerProvider()))
 	t.Cleanup(srv.Close)
 
 	resp, err := srv.Client().Get(srv.URL + "/auth/sign-out")
@@ -51,7 +61,7 @@ func TestHealthz(t *testing.T) {
 			wantStatus: http.StatusNotFound},
 	}
 	// A real server rather than a recorder: only a server drops the body of a HEAD response.
-	srv := httptest.NewServer(RoutesHandler(noop.NewTracerProvider(), &session.Auth{}))
+	srv := httptest.NewServer(mustRoutes(t, noop.NewTracerProvider()))
 	t.Cleanup(srv.Close)
 
 	for _, tt := range tests {
@@ -60,6 +70,8 @@ func TestHealthz(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Same-origin, so the CSRF check lets every row through to the router.
+			req.Header.Set("Origin", srv.URL)
 			resp, err := srv.Client().Do(req)
 			if err != nil {
 				t.Fatal(err)
