@@ -69,7 +69,11 @@ func (c *fakeCore) received() []coreCall {
 
 func mustAPIRoutes(t *testing.T, tp trace.TracerProvider, core *fakeCore) http.Handler {
 	t.Helper()
-	h, err := RoutesHandler(tp, stubAuth{}, proxy.New(core.url, proxy.NewTransport(tp, time.Second)), testConfig())
+	upstreams := proxy.ExtClients{
+		Core:        proxy.NewProxy(core.url, proxy.NewTransport(tp, time.Second)),
+		MOKImporter: http.NotFoundHandler(),
+	}
+	h, err := RoutesHandler(tp, stubAuth{}, testConfig(), upstreams)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,7 @@ var required = []string{
 	"FINTRACE_OAUTH2_ISSUER_URI",
 	"BFF_PUBLIC_ORIGIN",
 	"BFF_CORE_URL",
-	"BFF_IMPORTER_URL",
+	"BFF_MOK_IMPORTER_URL",
 	"BFF_WEB_URL",
 	"BFF_OAUTH2_CLIENT_ID",
 	"BFF_OAUTH2_CLIENT_SECRET",
@@ -36,7 +36,7 @@ func fullEnv() map[string]string {
 		"FINTRACE_OAUTH2_ISSUER_URI": "https://idp.example/realms/r",
 		"BFF_PUBLIC_ORIGIN":          "https://fintrace.example",
 		"BFF_CORE_URL":               "http://fintrace-core:8080",
-		"BFF_IMPORTER_URL":           "http://fintrace-mok-importer:8080",
+		"BFF_MOK_IMPORTER_URL":       "http://fintrace-mok-importer:8080",
 		"BFF_WEB_URL":                "http://fintrace-web:8080",
 		"BFF_OAUTH2_CLIENT_ID":       "fintrace-bff",
 		"BFF_OAUTH2_CLIENT_SECRET":   "s3cret",
@@ -59,17 +59,17 @@ func without(env map[string]string, names ...string) map[string]string {
 func TestLoad(t *testing.T) {
 	withDefaults := func(listenAddr string, level slog.Level, idle, max time.Duration) Config {
 		return Config{
-			ListenAddr:   listenAddr,
-			LogLevel:     level,
-			SessionIdle:  idle,
-			SessionMax:   max,
-			IssuerURI:    mustParse(t, "https://idp.example/realms/r"),
-			PublicOrigin: mustParse(t, "https://fintrace.example"),
-			CoreURL:      mustParse(t, "http://fintrace-core:8080"),
-			ImporterURL:  mustParse(t, "http://fintrace-mok-importer:8080"),
-			WebURL:       mustParse(t, "http://fintrace-web:8080"),
-			ClientID:     "fintrace-bff",
-			ClientSecret: "s3cret",
+			ListenAddr:     listenAddr,
+			LogLevel:       level,
+			SessionIdle:    idle,
+			SessionMax:     max,
+			IssuerURI:      mustParse(t, "https://idp.example/realms/r"),
+			PublicOrigin:   mustParse(t, "https://fintrace.example"),
+			CoreURL:        mustParse(t, "http://fintrace-core:8080"),
+			MOKImporterURL: mustParse(t, "http://fintrace-mok-importer:8080"),
+			WebURL:         mustParse(t, "http://fintrace-web:8080"),
+			ClientID:       "fintrace-bff",
+			ClientSecret:   "s3cret",
 		}
 	}
 	tests := []struct {
@@ -165,7 +165,7 @@ func TestLoadRejectsUnknownLogLevel(t *testing.T) {
 var urlVars = []string{
 	"FINTRACE_OAUTH2_ISSUER_URI",
 	"BFF_CORE_URL",
-	"BFF_IMPORTER_URL",
+	"BFF_MOK_IMPORTER_URL",
 	"BFF_WEB_URL",
 }
 

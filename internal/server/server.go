@@ -27,13 +27,19 @@ type Authenticator interface {
 	BearerFromSession(http.Handler) http.Handler
 }
 
-func RoutesHandler(tp trace.TracerProvider, auth Authenticator, core http.Handler, cfg config.Config) (http.Handler, error) {
+func RoutesHandler(
+	tp trace.TracerProvider,
+	auth Authenticator,
+	cfg config.Config,
+	cl proxy.ExtClients,
+) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	// Registered routes
 	registerHealth(mux)
 	registerAuth(mux, auth)
-	proxy.RegisterCoreRoutes(mux, auth.BearerFromSession, core)
+	proxy.RegisterCoreRoutes(mux, auth.BearerFromSession, cl.Core)
+	proxy.RegisterImporterRoutes(mux, auth.BearerFromSession, cl.MOKImporter)
 
 	// Wrappers
 	h, err := withCSRF(mux, cfg)

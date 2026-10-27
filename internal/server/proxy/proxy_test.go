@@ -84,7 +84,7 @@ func noContent(w http.ResponseWriter, _ *http.Request) {
 
 func proxyTo(target *url.URL, transport http.RoundTripper, req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	New(target, transport).ServeHTTP(rec, req)
+	NewProxy(target, transport).ServeHTTP(rec, req)
 	return rec
 }
 

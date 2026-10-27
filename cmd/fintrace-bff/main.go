@@ -50,9 +50,9 @@ func run() error {
 		return err
 	}
 
-	core := proxy.New(cfg.CoreURL, proxy.NewTransport(tp, 10*time.Second))
+	cl := proxy.MakeClients(cfg, tp)
 
-	srv, err := newHTTPServer(cfg, tp, auth, core)
+	srv, err := newHTTPServer(cfg, tp, auth, cl)
 	if err != nil {
 		return err
 	}
@@ -92,8 +92,13 @@ func shutdownTracingProvider(tp *sdktrace.TracerProvider) {
 	}
 }
 
-func newHTTPServer(cfg config.Config, tp trace.TracerProvider, auth server.Authenticator, core http.Handler) (*http.Server, error) {
-	handler, err := server.RoutesHandler(tp, auth, core, cfg)
+func newHTTPServer(
+	cfg config.Config,
+	tp trace.TracerProvider,
+	auth server.Authenticator,
+	cl proxy.ExtClients,
+) (*http.Server, error) {
+	handler, err := server.RoutesHandler(tp, auth, cfg, cl)
 	if err != nil {
 		return nil, err
 	}

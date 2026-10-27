@@ -1,8 +1,12 @@
 package proxy
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
+	"time"
+
+	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 )
 
 var coreRoutes = []string{
@@ -45,10 +49,51 @@ var coreRoutes = []string{
 	"GET /api/v1/workspaces/{workspaceId}/statistics/balances/accounts",
 }
 
+var mokImporterRoutes = []string{"POST /api/v1/workspaces/{workspaceId}/import"}
+
+const (
+	uploadMaxBytes      = 51 << 20 // the importer's 50 MiB plus room for multipart framing
+	uploadReadDeadline  = 2 * time.Minute
+	uploadWriteDeadline = 6 * time.Minute
+)
+
 func RegisterCoreRoutes(mux *http.ServeMux, bearer func(http.Handler) http.Handler, upstream http.Handler) {
 	h := bearer(upstream)
 	for _, pattern := range coreRoutes {
-		mux.Handle(pattern, h)
-		slog.Info("route registered", "pattern", pattern, "upstream", "core")
+		register(mux, h, pattern, "core")
 	}
+}
+
+func RegisterImporterRoutes(mux *http.ServeMux, bearer func(http.Handler) http.Handler, upstream http.Handler) {
+	h := bearer(uploadLimit(upstream))
+	for _, pattern := range mokImporterRoutes {
+		register(mux, h, pattern, "mok-importer")
+	}
+}
+
+func uploadLimit(next http.Handler) http.Handler {
+	capped := http.MaxBytesHandler(next, uploadMaxBytes)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > uploadMaxBytes {
+			httperr.Write(w, r, http.StatusRequestEntityTooLarge, httperr.UploadTooLarge, "upload too large")
+			return
+		}
+
+		rc := http.NewResponseController(w)
+		now := time.Now()
+		if err := errors.Join(
+			rc.SetReadDeadline(now.Add(uploadReadDeadline)),
+			rc.SetWriteDeadline(now.Add(uploadWriteDeadline)),
+		); err != nil {
+			slog.WarnContext(r.Context(), "Upload deadlines not extended", "error", err)
+		}
+
+		capped.ServeHTTP(w, r)
+	})
+}
+
+func register(mux *http.ServeMux, h http.Handler, pattern string, upstream string) {
+	mux.Handle(pattern, h)
+	slog.Info("route registered", "pattern", pattern, "upstream", upstream)
 }

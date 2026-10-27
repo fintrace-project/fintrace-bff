@@ -18,7 +18,7 @@ import (
 
 var strippedRequestHeaders = []string{"Cookie", "Traceparent", "Tracestate", "Baggage"}
 
-func New(target *url.URL, transport http.RoundTripper) *httputil.ReverseProxy {
+func NewProxy(target *url.URL, transport http.RoundTripper) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
@@ -38,6 +38,11 @@ func dropSetCookie(resp *http.Response) error {
 }
 
 func upstreamFailed(w http.ResponseWriter, r *http.Request, err error) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+		httperr.Write(w, r, http.StatusRequestEntityTooLarge, httperr.UploadTooLarge, "upload too large")
+		return
+	}
+
 	status, code, detail := http.StatusBadGateway, httperr.UpstreamUnavailable, "upstream unavailable"
 	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
 		status, code, detail = http.StatusGatewayTimeout, httperr.UpstreamTimeout, "upstream timed out"

@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/fintrace-project/fintrace-bff/internal/config"
+	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
@@ -25,7 +26,8 @@ func testConfig(listenAddr string) config.Config {
 
 func mustHTTPServer(t *testing.T, cfg config.Config) *http.Server {
 	t.Helper()
-	srv, err := newHTTPServer(cfg, noop.NewTracerProvider(), &session.Auth{}, http.NotFoundHandler())
+	upstreams := proxy.ExtClients{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler()}
+	srv, err := newHTTPServer(cfg, noop.NewTracerProvider(), &session.Auth{}, upstreams)
 	if err != nil {
 		t.Fatal(err)
 	}

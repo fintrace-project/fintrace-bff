@@ -9,12 +9,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
+var noUpstreams = proxy.ExtClients{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler()}
+
 func mustRoutes(t *testing.T, tp trace.TracerProvider) http.Handler {
 	t.Helper()
-	h, err := RoutesHandler(tp, &session.Auth{}, http.NotFoundHandler(), testConfig())
+	h, err := RoutesHandler(tp, &session.Auth{}, testConfig(), noUpstreams)
 	if err != nil {
 		t.Fatal(err)
 	}

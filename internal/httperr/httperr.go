@@ -14,6 +14,7 @@ const (
 	SessionUnavailable  Code = "SESSION_UNAVAILABLE"
 	UpstreamUnavailable Code = "UPSTREAM_UNAVAILABLE"
 	UpstreamTimeout     Code = "UPSTREAM_TIMEOUT"
+	UploadTooLarge      Code = "UPLOAD_TOO_LARGE"
 )
 
 type body struct {
