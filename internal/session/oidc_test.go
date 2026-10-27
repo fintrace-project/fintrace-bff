@@ -133,6 +133,9 @@ func TestNewOIDCBuildsSignInFromDiscovery(t *testing.T) {
 	if auth.Verifier == nil {
 		t.Error("Verifier is nil")
 	}
+	if auth.AccessVerifier == nil {
+		t.Error("AccessVerifier is nil")
+	}
 }
 
 func TestNewOIDCRefusesAnUnusableProvider(t *testing.T) {

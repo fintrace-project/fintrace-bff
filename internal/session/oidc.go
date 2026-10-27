@@ -14,6 +14,7 @@ import (
 
 type OIDC struct {
 	Verifier              *oidc.IDTokenVerifier
+	AccessVerifier        *oidc.IDTokenVerifier
 	OAuth2                oauth2.Config
 	EndSessionURL         *url.URL
 	PostLogoutRedirectURL string
@@ -40,7 +41,8 @@ func newOIDC(ctx context.Context, cfg config.Config, client *http.Client) (*OIDC
 	}
 
 	return &OIDC{
-		Verifier: provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
+		Verifier:       provider.Verifier(&oidc.Config{ClientID: cfg.ClientID}),
+		AccessVerifier: provider.Verifier(&oidc.Config{SkipClientIDCheck: true}),
 		OAuth2: oauth2.Config{
 			ClientID:     cfg.ClientID,
 			ClientSecret: cfg.ClientSecret,

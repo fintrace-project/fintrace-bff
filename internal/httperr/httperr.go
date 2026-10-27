@@ -15,6 +15,7 @@ const (
 	UpstreamUnavailable Code = "UPSTREAM_UNAVAILABLE"
 	UpstreamTimeout     Code = "UPSTREAM_TIMEOUT"
 	UploadTooLarge      Code = "UPLOAD_TOO_LARGE"
+	InvalidToken        Code = "INVALID_TOKEN"
 )
 
 type body struct {

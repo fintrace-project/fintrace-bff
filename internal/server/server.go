@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
+	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
 const healthzPath = "/healthz"
@@ -25,6 +27,7 @@ type Authenticator interface {
 	Callback(http.ResponseWriter, *http.Request)
 	SignOut(http.ResponseWriter, *http.Request)
 	BearerFromSession(http.Handler) http.Handler
+	VerifyBearer(http.Handler) http.Handler
 }
 
 func RoutesHandler(
@@ -34,12 +37,13 @@ func RoutesHandler(
 	cl proxy.ExtClients,
 ) (http.Handler, error) {
 	mux := http.NewServeMux()
+	authn := authenticate(auth)
 
 	// Registered routes
 	registerHealth(mux)
 	registerAuth(mux, auth)
-	proxy.RegisterCoreRoutes(mux, auth.BearerFromSession, cl.Core)
-	proxy.RegisterImporterRoutes(mux, auth.BearerFromSession, cl.MOKImporter)
+	proxy.RegisterCoreRoutes(mux, authn, cl.Core)
+	proxy.RegisterImporterRoutes(mux, authn, cl.MOKImporter)
 
 	// Wrappers
 	h, err := withCSRF(mux, cfg)
@@ -59,6 +63,11 @@ func withCSRF(handler http.Handler, cfg config.Config) (http.Handler, error) {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hasBearer(r) && strings.HasPrefix(r.URL.Path, "/api/") {
+			handler.ServeHTTP(w, r)
+			return
+		}
+
 		err := p.Check(r)
 		if err == nil && isUnsafe(r.Method) && r.Header.Get("Origin") == "" {
 			err = errors.New("missing Origin header")
@@ -121,4 +130,23 @@ func registerAuthSignOut(mux *http.ServeMux, auth Authenticator) {
 
 func isUnsafe(s string) bool {
 	return s != http.MethodGet && s != http.MethodOptions && s != http.MethodHead
+}
+
+func authenticate(auth Authenticator) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		byToken := auth.VerifyBearer(next)
+		bySession := auth.BearerFromSession(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if hasBearer(r) {
+				byToken.ServeHTTP(w, r)
+				return
+			}
+			bySession.ServeHTTP(w, r)
+		})
+	}
+}
+
+func hasBearer(r *http.Request) bool {
+	_, ok := session.BearerToken(r)
+	return ok
 }

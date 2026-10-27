@@ -70,3 +70,60 @@ func TestCSRF(t *testing.T) {
 		})
 	}
 }
+
+func TestCSRFExemptsOnlyABearerUnderAPI(t *testing.T) {
+	tests := []struct {
+		name          string
+		path          string
+		authorization string
+		origin        string
+		wantReached   bool
+		why           string
+	}{
+		{name: "Bearer under /api without Origin passes", path: "/api/v1/workspaces",
+			authorization: "Bearer caller-token", wantReached: true, why: "or fintrace-smoke and the CLI could not write"},
+		{name: "Bearer under /api from a foreign origin passes", path: "/api/v1/workspaces",
+			authorization: "Bearer caller-token", origin: "https://evil.example", wantReached: true,
+			why: "since a cross-site page cannot attach the header, and the token decides"},
+		{name: "a lower-case scheme passes", path: "/api/v1/workspaces",
+			authorization: "bearer caller-token", wantReached: true, why: "or the exemption and the routing disagree"},
+		{name: "Bearer on sign-out from a foreign origin is refused", path: authSignOutPath,
+			authorization: "Bearer caller-token", origin: "https://evil.example",
+			why: "or a header would lift the check from a handler that reads the cookie"},
+		{name: "Basic under /api without Origin is refused", path: "/api/v1/workspaces",
+			authorization: "Basic dXNlcjpwYXNz", why: "or a browser's own Basic credentials would skip the check"},
+		{name: "no Authorization under /api without Origin is refused", path: "/api/v1/workspaces",
+			why: "or the session path would lose its check"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reached := false
+			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reached = true
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tt.path, nil)
+			if tt.authorization != "" {
+				req.Header.Set("Authorization", tt.authorization)
+			}
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			csrf, err := withCSRF(next, testConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			csrf.ServeHTTP(rec, req)
+
+			if reached != tt.wantReached {
+				t.Fatalf("handler reached = %t, want %t, %s", reached, tt.wantReached, tt.why)
+			}
+			if !tt.wantReached && rec.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+			}
+		})
+	}
+}
