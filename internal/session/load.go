@@ -13,6 +13,25 @@ const (
 	touchInterval = time.Minute
 )
 
+func (a *Auth) BearerFromSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s, _, err := a.load(r)
+		if errors.Is(err, ErrNoSession) {
+			http.Error(w, "no session", http.StatusUnauthorized)
+			return
+		}
+		if err != nil {
+			slog.ErrorContext(r.Context(), "Session not loaded", "error", err)
+			http.Error(w, "session unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		out := r.Clone(r.Context())
+		out.Header.Set("Authorization", "Bearer "+s.AccessToken)
+		next.ServeHTTP(w, out)
+	})
+}
+
 func (a *Auth) load(r *http.Request) (Session, StoreKey, error) {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {

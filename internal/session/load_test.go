@@ -202,3 +202,152 @@ func TestLoadStillReturnsTheSessionWhenTheTouchFails(t *testing.T) {
 		t.Errorf("session = %+v, want the stored one", s)
 	}
 }
+
+type nextRecorder struct {
+	called bool
+	req    *http.Request
+}
+
+func (n *nextRecorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	n.called, n.req = true, r
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func apiRequest(t *testing.T, cookies ...*http.Cookie) *http.Request {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/workspaces?page=2", nil)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	return req
+}
+
+func bearerFromSession(a *Auth, req *http.Request) (*httptest.ResponseRecorder, *nextRecorder) {
+	next := &nextRecorder{}
+	rec := httptest.NewRecorder()
+	a.BearerFromSession(next).ServeHTTP(rec, req)
+	return rec, next
+}
+
+func ownCookie() *http.Cookie {
+	return &http.Cookie{Name: sessionCookie, Value: loadTestID}
+}
+
+func TestBearerFromSessionRefusesWithoutASession(t *testing.T) {
+	tests := []struct {
+		name    string
+		cookies []*http.Cookie
+	}{
+		{name: "no cookie"},
+		{name: "an id the store does not know", cookies: []*http.Cookie{{Name: sessionCookie, Value: "unknown"}}},
+		{name: "only the sign-in cookie", cookies: []*http.Cookie{{Name: signInCookie, Value: loadTestID}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newLoadFixture(t)
+			rec, next := bearerFromSession(f.a, apiRequest(t, tt.cookies...))
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+			if next.called {
+				t.Error("next was called without a session")
+			}
+		})
+	}
+}
+
+func TestBearerFromSessionAnswers503WhenTheStoreFails(t *testing.T) {
+	f := newLoadFixture(t)
+	f.store.loadErr = errors.New("store down")
+
+	rec, next := bearerFromSession(f.a, apiRequest(t, ownCookie()))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+	if next.called {
+		t.Error("next was called although the session could not be read")
+	}
+}
+
+func TestBearerFromSessionForwardsTheSessionsAccessToken(t *testing.T) {
+	f := newLoadFixture(t)
+	req := apiRequest(t, ownCookie())
+
+	rec, next := bearerFromSession(f.a, req)
+
+	if !next.called {
+		t.Fatalf("next not called, status = %d", rec.Code)
+	}
+	if got := next.req.Header.Get("Authorization"); got != "Bearer access-1" {
+		t.Errorf("Authorization = %q, want %q", got, "Bearer access-1")
+	}
+	if next.req.Method != req.Method || next.req.URL.String() != req.URL.String() {
+		t.Errorf("next got %s %s, want %s %s", next.req.Method, next.req.URL, req.Method, req.URL)
+	}
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want next's %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestBearerFromSessionReplacesTheBrowsersAuthorization(t *testing.T) {
+	f := newLoadFixture(t)
+	req := apiRequest(t, ownCookie())
+	req.Header.Add("Authorization", "Bearer chosen-by-the-browser")
+
+	_, next := bearerFromSession(f.a, req)
+
+	if !next.called {
+		t.Fatal("next not called")
+	}
+	if got := next.req.Header.Values("Authorization"); len(got) != 1 || got[0] != "Bearer access-1" {
+		t.Errorf("Authorization = %q, want only the session's token", got)
+	}
+}
+
+func TestBearerFromSessionLeavesTheIncomingRequestUnchanged(t *testing.T) {
+	f := newLoadFixture(t)
+	req := apiRequest(t, ownCookie())
+
+	_, next := bearerFromSession(f.a, req)
+
+	if !next.called {
+		t.Fatal("next not called")
+	}
+	if got := req.Header.Get("Authorization"); got != "" {
+		t.Errorf("incoming Authorization = %q, want it untouched", got)
+	}
+	if next.req == req {
+		t.Error("next got the incoming request itself, want a clone")
+	}
+}
+
+func TestBearerFromSessionForwardsARefreshedToken(t *testing.T) {
+	f := newRefreshFixture(t, &refreshRealm{})
+	f.now = accessExpiry.Add(-30 * time.Second)
+
+	_, next := bearerFromSession(f.a, apiRequest(t, ownCookie()))
+
+	if !next.called {
+		t.Fatal("next not called")
+	}
+	if got := next.req.Header.Get("Authorization"); got != "Bearer access-1" {
+		t.Errorf("Authorization = %q, want the refreshed %q", got, "Bearer access-1")
+	}
+}
+
+func TestBearerFromSessionRefusesASessionTheRealmHasEnded(t *testing.T) {
+	f := newRefreshFixture(t, &refreshRealm{})
+	f.realm.current = "rotated-elsewhere"
+	f.now = accessExpiry.Add(-30 * time.Second)
+
+	rec, next := bearerFromSession(f.a, apiRequest(t, ownCookie()))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d after invalid_grant", rec.Code, http.StatusUnauthorized)
+	}
+	if next.called {
+		t.Error("next was called with a session the realm has ended")
+	}
+}
