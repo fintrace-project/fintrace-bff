@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/fintrace-project/fintrace-bff/internal/config"
-	"github.com/fintrace-project/fintrace-bff/internal/session"
+	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 )
 
 const healthzPath = "/healthz"
@@ -20,12 +20,20 @@ const authSignInPath = "/auth/sign-in"
 const authCallbackPath = "/auth/callback"
 const authSignOutPath = "/auth/sign-out"
 
-func RoutesHandler(tp trace.TracerProvider, auth *session.Auth, cfg config.Config) (http.Handler, error) {
+type Authenticator interface {
+	SignIn(http.ResponseWriter, *http.Request)
+	Callback(http.ResponseWriter, *http.Request)
+	SignOut(http.ResponseWriter, *http.Request)
+	BearerFromSession(http.Handler) http.Handler
+}
+
+func RoutesHandler(tp trace.TracerProvider, auth Authenticator, core http.Handler, cfg config.Config) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	// Registered routes
 	registerHealth(mux)
 	registerAuth(mux, auth)
+	proxy.RegisterCoreRoutes(mux, auth.BearerFromSession, core)
 
 	// Wrappers
 	h, err := withCSRF(mux, cfg)
@@ -81,25 +89,25 @@ func registerHealth(mux *http.ServeMux) {
 	slog.Info("route registered", "pattern", path)
 }
 
-func registerAuth(mux *http.ServeMux, auth *session.Auth) {
+func registerAuth(mux *http.ServeMux, auth Authenticator) {
 	registerAuthSignIn(mux, auth)
 	registerAuthCallback(mux, auth)
 	registerAuthSignOut(mux, auth)
 }
 
-func registerAuthSignIn(mux *http.ServeMux, auth *session.Auth) {
+func registerAuthSignIn(mux *http.ServeMux, auth Authenticator) {
 	const path = http.MethodGet + " " + authSignInPath
 	mux.HandleFunc(path, auth.SignIn)
 	slog.Info("route registered", "pattern", path)
 }
 
-func registerAuthCallback(mux *http.ServeMux, auth *session.Auth) {
+func registerAuthCallback(mux *http.ServeMux, auth Authenticator) {
 	const path = http.MethodGet + " " + authCallbackPath
 	mux.HandleFunc(path, auth.Callback)
 	slog.Info("route registered", "pattern", path)
 }
 
-func registerAuthSignOut(mux *http.ServeMux, auth *session.Auth) {
+func registerAuthSignOut(mux *http.ServeMux, auth Authenticator) {
 	const path = http.MethodPost + " " + authSignOutPath
 	mux.HandleFunc(path, auth.SignOut)
 	slog.Info("route registered", "pattern", path)

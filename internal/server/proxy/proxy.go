@@ -1,0 +1,56 @@
+package proxy
+
+import (
+	"errors"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"time"
+
+	"github.com/fintrace-project/fintrace-bff/internal/logging"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+)
+
+var strippedRequestHeaders = []string{"Cookie", "Traceparent", "Tracestate", "Baggage"}
+
+func New(target *url.URL, transport http.RoundTripper) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			for _, h := range strippedRequestHeaders {
+				pr.Out.Header.Del(h)
+			}
+		},
+		Transport:      transport,
+		ModifyResponse: dropSetCookie,
+		ErrorHandler:   upstreamFailed,
+	}
+}
+
+func dropSetCookie(resp *http.Response) error {
+	resp.Header.Del("Set-Cookie")
+	return nil
+}
+
+func upstreamFailed(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusBadGateway
+	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
+		status = http.StatusGatewayTimeout
+	}
+	slog.DebugContext(r.Context(), "Upstream unavailable", "path", r.URL.Path, "status", status, "error", err)
+	http.Error(w, http.StatusText(status), status)
+}
+
+func NewTransport(tp trace.TracerProvider, responseHeaderTimeout time.Duration) http.RoundTripper {
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.ResponseHeaderTimeout = responseHeaderTimeout
+
+	return otelhttp.NewTransport(logging.NewCallLogger(base),
+		otelhttp.WithTracerProvider(tp),
+		otelhttp.WithPropagators(propagation.TraceContext{}),
+	)
+}

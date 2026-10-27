@@ -25,7 +25,7 @@ func testConfig(listenAddr string) config.Config {
 
 func mustHTTPServer(t *testing.T, cfg config.Config) *http.Server {
 	t.Helper()
-	srv, err := newHTTPServer(cfg, noop.NewTracerProvider(), &session.Auth{})
+	srv, err := newHTTPServer(cfg, noop.NewTracerProvider(), &session.Auth{}, http.NotFoundHandler())
 	if err != nil {
 		t.Fatal(err)
 	}

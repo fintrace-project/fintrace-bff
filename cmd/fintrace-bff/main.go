@@ -17,6 +17,7 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/config"
 	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"github.com/fintrace-project/fintrace-bff/internal/server"
+	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 	"github.com/fintrace-project/fintrace-bff/internal/session/memstore"
 )
@@ -49,7 +50,9 @@ func run() error {
 		return err
 	}
 
-	srv, err := newHTTPServer(cfg, tp, auth)
+	core := proxy.New(cfg.CoreURL, proxy.NewTransport(tp, 10*time.Second))
+
+	srv, err := newHTTPServer(cfg, tp, auth, core)
 	if err != nil {
 		return err
 	}
@@ -89,8 +92,8 @@ func shutdownTracingProvider(tp *sdktrace.TracerProvider) {
 	}
 }
 
-func newHTTPServer(cfg config.Config, tp trace.TracerProvider, auth *session.Auth) (*http.Server, error) {
-	handler, err := server.RoutesHandler(tp, auth, cfg)
+func newHTTPServer(cfg config.Config, tp trace.TracerProvider, auth server.Authenticator, core http.Handler) (*http.Server, error) {
+	handler, err := server.RoutesHandler(tp, auth, core, cfg)
 	if err != nil {
 		return nil, err
 	}

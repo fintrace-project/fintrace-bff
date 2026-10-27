@@ -14,7 +14,7 @@ import (
 
 func mustRoutes(t *testing.T, tp trace.TracerProvider) http.Handler {
 	t.Helper()
-	h, err := RoutesHandler(tp, &session.Auth{}, testConfig())
+	h, err := RoutesHandler(tp, &session.Auth{}, http.NotFoundHandler(), testConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
