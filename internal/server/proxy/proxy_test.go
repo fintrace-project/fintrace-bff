@@ -118,6 +118,29 @@ func TestProxyForwardsTheCallIntact(t *testing.T) {
 	}
 }
 
+func TestProxyJoinsTheTargetsBasePath(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+	}{
+		{name: "a base path", base: "/base"},
+		{name: "a base path with a trailing slash", base: "/base/"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			core := newFakeCore(t, noContent)
+			target := *core.url
+			target.Path = tt.base
+
+			proxyTo(&target, http.DefaultTransport, httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil))
+
+			if got := core.only(t).path; got != "/base/api/v1/workspaces" {
+				t.Errorf("Core got %s, want /base/api/v1/workspaces", got)
+			}
+		})
+	}
+}
+
 func TestProxyStripsWhatCoreMustNotSee(t *testing.T) {
 	core := newFakeCore(t, noContent)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil)
