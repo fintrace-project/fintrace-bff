@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -37,12 +38,12 @@ func dropSetCookie(resp *http.Response) error {
 }
 
 func upstreamFailed(w http.ResponseWriter, r *http.Request, err error) {
-	status := http.StatusBadGateway
+	status, code, detail := http.StatusBadGateway, httperr.UpstreamUnavailable, "upstream unavailable"
 	if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() {
-		status = http.StatusGatewayTimeout
+		status, code, detail = http.StatusGatewayTimeout, httperr.UpstreamTimeout, "upstream timed out"
 	}
 	slog.DebugContext(r.Context(), "Upstream unavailable", "path", r.URL.Path, "status", status, "error", err)
-	http.Error(w, http.StatusText(status), status)
+	httperr.Write(w, r, status, code, detail)
 }
 
 func NewTransport(tp trace.TracerProvider, responseHeaderTimeout time.Duration) http.RoundTripper {

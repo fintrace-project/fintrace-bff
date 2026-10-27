@@ -1,11 +1,14 @@
 package session
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 )
 
 const loadTestID = "session-id-1"
@@ -233,6 +236,23 @@ func ownCookie() *http.Cookie {
 	return &http.Cookie{Name: sessionCookie, Value: loadTestID}
 }
 
+func wantHTTPError(t *testing.T, rec *httptest.ResponseRecorder, status int, code httperr.Code) {
+	t.Helper()
+	if rec.Code != status {
+		t.Errorf("status = %d, want %d", rec.Code, status)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
+	var body struct{ Code httperr.Code }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not JSON: %v", rec.Body.String(), err)
+	}
+	if body.Code != code {
+		t.Errorf("code = %q, want %q", body.Code, code)
+	}
+}
+
 func TestBearerFromSessionRefusesWithoutASession(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -247,9 +267,7 @@ func TestBearerFromSessionRefusesWithoutASession(t *testing.T) {
 			f := newLoadFixture(t)
 			rec, next := bearerFromSession(f.a, apiRequest(t, tt.cookies...))
 
-			if rec.Code != http.StatusUnauthorized {
-				t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
-			}
+			wantHTTPError(t, rec, http.StatusUnauthorized, httperr.NoSession)
 			if next.called {
 				t.Error("next was called without a session")
 			}
@@ -263,9 +281,7 @@ func TestBearerFromSessionAnswers503WhenTheStoreFails(t *testing.T) {
 
 	rec, next := bearerFromSession(f.a, apiRequest(t, ownCookie()))
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
-	}
+	wantHTTPError(t, rec, http.StatusServiceUnavailable, httperr.SessionUnavailable)
 	if next.called {
 		t.Error("next was called although the session could not be read")
 	}
@@ -344,9 +360,7 @@ func TestBearerFromSessionRefusesASessionTheRealmHasEnded(t *testing.T) {
 
 	rec, next := bearerFromSession(f.a, apiRequest(t, ownCookie()))
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d after invalid_grant", rec.Code, http.StatusUnauthorized)
-	}
+	wantHTTPError(t, rec, http.StatusUnauthorized, httperr.NoSession)
 	if next.called {
 		t.Error("next was called with a session the realm has ended")
 	}

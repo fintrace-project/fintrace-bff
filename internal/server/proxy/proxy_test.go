@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 )
 
 type arrived struct {
@@ -56,6 +59,23 @@ func (c *fakeCore) only(t *testing.T) arrived {
 		t.Fatalf("Core received %d requests, want 1", len(c.calls))
 	}
 	return c.calls[0]
+}
+
+func wantHTTPError(t *testing.T, rec *httptest.ResponseRecorder, status int, code httperr.Code) {
+	t.Helper()
+	if rec.Code != status {
+		t.Errorf("status = %d, want %d", rec.Code, status)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
+	var body struct{ Code httperr.Code }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body %q is not JSON: %v", rec.Body.String(), err)
+	}
+	if body.Code != code {
+		t.Errorf("code = %q, want %q", body.Code, code)
+	}
 }
 
 func noContent(w http.ResponseWriter, _ *http.Request) {
@@ -184,9 +204,7 @@ func TestProxyAnswers502WhenCoreIsDown(t *testing.T) {
 
 	rec := proxyTo(target, http.DefaultTransport, httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil))
 
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadGateway)
-	}
+	wantHTTPError(t, rec, http.StatusBadGateway, httperr.UpstreamUnavailable)
 }
 
 func TestProxyAnswers504WhenCoreIsTooSlow(t *testing.T) {
@@ -201,7 +219,5 @@ func TestProxyAnswers504WhenCoreIsTooSlow(t *testing.T) {
 
 	rec := proxyTo(core.url, transport, httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil))
 
-	if rec.Code != http.StatusGatewayTimeout {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusGatewayTimeout)
-	}
+	wantHTTPError(t, rec, http.StatusGatewayTimeout, httperr.UpstreamTimeout)
 }

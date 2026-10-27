@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 )
 
 const (
@@ -17,12 +19,12 @@ func (a *Auth) BearerFromSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, _, err := a.load(r)
 		if errors.Is(err, ErrNoSession) {
-			http.Error(w, "no session", http.StatusUnauthorized)
+			httperr.Write(w, r, http.StatusUnauthorized, httperr.NoSession, "no session")
 			return
 		}
 		if err != nil {
 			slog.ErrorContext(r.Context(), "Session not loaded", "error", err)
-			http.Error(w, "session unavailable", http.StatusServiceUnavailable)
+			httperr.Write(w, r, http.StatusServiceUnavailable, httperr.SessionUnavailable, "session store unavailable")
 			return
 		}
 
