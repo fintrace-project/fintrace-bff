@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -41,7 +42,7 @@ func TestTransportCarriesTheCallersTraceInAClientSpan(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := NewTransport(tp, time.Second).RoundTrip(req)
+	resp, err := NewTransport(tp, time.Second, slog.LevelInfo).RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -86,7 +87,7 @@ func TestTransportAppliesTheResponseHeaderTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := NewTransport(tp, 50*time.Millisecond).RoundTrip(req)
+	resp, err := NewTransport(tp, 50*time.Millisecond, slog.LevelInfo).RoundTrip(req)
 	if err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("RoundTrip() succeeded, want a timeout")
@@ -100,7 +101,7 @@ func TestTransportLeavesTheDefaultTransportAlone(t *testing.T) {
 	tp, _ := newRecordingProvider(t)
 	before := http.DefaultTransport.(*http.Transport).ResponseHeaderTimeout
 
-	NewTransport(tp, 50*time.Millisecond)
+	NewTransport(tp, 50*time.Millisecond, slog.LevelInfo)
 
 	if got := http.DefaultTransport.(*http.Transport).ResponseHeaderTimeout; got != before {
 		t.Errorf("http.DefaultTransport's ResponseHeaderTimeout = %v, want %v unchanged", got, before)

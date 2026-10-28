@@ -13,7 +13,7 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
-var noUpstreams = proxy.ExtClients{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler()}
+var noUpstreams = proxy.ExtClients{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler(), Web: http.NotFoundHandler()}
 
 func mustRoutes(t *testing.T, tp trace.TracerProvider) http.Handler {
 	t.Helper()
@@ -34,11 +34,12 @@ func TestSignOutIsPostOnly(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want %d, or a link could sign a user out", resp.StatusCode, http.StatusMethodNotAllowed)
+	// A GET falls through to the /auth/ fallback, never to SignOut, or a link could sign a user out.
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
 	}
-	if got := resp.Header.Get("Allow"); got != "POST" {
-		t.Errorf("Allow = %q, want %q", got, "POST")
+	if ct := resp.Header.Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want the /auth/ fallback's problem+json", ct)
 	}
 }
 

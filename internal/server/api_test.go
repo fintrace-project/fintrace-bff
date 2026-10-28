@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -100,7 +101,8 @@ func (c *fakeCore) received() []coreCall {
 func mustAPIRoutes(t *testing.T, tp trace.TracerProvider, auth *stubAuth, core *fakeCore) http.Handler {
 	t.Helper()
 	upstreams := proxy.ExtClients{
-		Core:        proxy.NewProxy(core.url, proxy.NewTransport(tp, time.Second), testConfig()),
+		Core:        proxy.NewProxy(core.url, proxy.NewTransport(tp, time.Second, slog.LevelInfo), testConfig()),
+		Web:         http.NotFoundHandler(),
 		MOKImporter: http.NotFoundHandler(),
 	}
 	h, err := RoutesHandler(tp, auth, testConfig(), upstreams)

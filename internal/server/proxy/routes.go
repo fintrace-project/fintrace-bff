@@ -57,6 +57,11 @@ const (
 	uploadWriteDeadline = 6 * time.Minute
 )
 
+func RegisterWebRoutes(mux *http.ServeMux, upstream http.Handler) {
+	h := onlyGET(upstream)
+	register(mux, h, "/", "web")
+}
+
 func RegisterCoreRoutes(mux *http.ServeMux, bearer func(http.Handler) http.Handler, upstream http.Handler) {
 	h := bearer(upstream)
 	for _, pattern := range coreRoutes {
@@ -90,6 +95,17 @@ func uploadLimit(next http.Handler) http.Handler {
 		}
 
 		capped.ServeHTTP(w, r)
+	})
+}
+
+func onlyGET(upstream http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		upstream.ServeHTTP(w, r)
 	})
 }
 

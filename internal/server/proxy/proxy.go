@@ -83,11 +83,11 @@ func upstreamFailed(w http.ResponseWriter, r *http.Request, err error) {
 	httperr.Write(w, r, status, code, detail)
 }
 
-func NewTransport(tp trace.TracerProvider, responseHeaderTimeout time.Duration) http.RoundTripper {
+func NewTransport(tp trace.TracerProvider, responseHeaderTimeout time.Duration, logLevel slog.Level) http.RoundTripper {
 	base := http.DefaultTransport.(*http.Transport).Clone()
 	base.ResponseHeaderTimeout = responseHeaderTimeout
 
-	return otelhttp.NewTransport(logging.NewCallLogger(base),
+	return otelhttp.NewTransport(logging.NewCallLoggerAt(base, logLevel),
 		otelhttp.WithTracerProvider(tp),
 		otelhttp.WithPropagators(propagation.TraceContext{}),
 	)

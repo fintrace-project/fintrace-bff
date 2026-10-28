@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/fintrace-project/fintrace-bff/internal/config"
+	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
@@ -42,6 +43,8 @@ func RoutesHandler(
 	// Registered routes
 	registerHealth(mux)
 	registerAuth(mux, auth)
+	registerNotFound(mux)
+	proxy.RegisterWebRoutes(mux, cl.Web)
 	proxy.RegisterCoreRoutes(mux, authn, cl.Core)
 	proxy.RegisterImporterRoutes(mux, authn, cl.MOKImporter)
 
@@ -126,6 +129,16 @@ func registerAuthSignOut(mux *http.ServeMux, auth Authenticator) {
 	const path = http.MethodPost + " " + authSignOutPath
 	mux.HandleFunc(path, auth.SignOut)
 	slog.Info("route registered", "pattern", path)
+}
+
+func registerNotFound(mux *http.ServeMux) {
+	notFound := func(w http.ResponseWriter, r *http.Request) {
+		httperr.Write(w, r, http.StatusNotFound, httperr.NotFound, "no such route")
+	}
+	for _, path := range []string{"/api/", "/auth/"} {
+		mux.HandleFunc(path, notFound)
+		slog.Info("route registered", "pattern", path)
+	}
 }
 
 func isUnsafe(s string) bool {

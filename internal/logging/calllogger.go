@@ -22,7 +22,8 @@ var (
 )
 
 type callLogger struct {
-	next http.RoundTripper
+	next  http.RoundTripper
+	level slog.Level
 }
 
 func (c callLogger) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -39,7 +40,7 @@ func (c callLogger) RoundTrip(req *http.Request) (*http.Response, error) {
 		slog.WarnContext(ctx, "outbound call failed", "method", req.Method, "url", sanitizedURL(req.URL), "duration", time.Since(startTime), "error", sanitizedError(err, req.URL))
 		return nil, err
 	}
-	slog.InfoContext(ctx, "outbound call", "method", req.Method, "url", sanitizedURL(req.URL), "status", resp.StatusCode, "duration", time.Since(startTime))
+	slog.Log(ctx, c.level, "outbound call", "method", req.Method, "url", sanitizedURL(req.URL), "status", resp.StatusCode, "duration", time.Since(startTime))
 
 	if debug {
 		slog.DebugContext(ctx, "outbound call response", "method", req.Method, "url", sanitizedURL(req.URL),
@@ -49,7 +50,11 @@ func (c callLogger) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func NewCallLogger(roundTripper http.RoundTripper) http.RoundTripper {
-	return callLogger{roundTripper}
+	return NewCallLoggerAt(roundTripper, slog.LevelInfo)
+}
+
+func NewCallLoggerAt(roundTripper http.RoundTripper, level slog.Level) http.RoundTripper {
+	return callLogger{next: roundTripper, level: level}
 }
 
 func sanitizedURL(u *url.URL) string {

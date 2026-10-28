@@ -102,6 +102,27 @@ func TestCallLoggerLogsATransportFailureAndReturnsIt(t *testing.T) {
 	}
 }
 
+func TestCallLoggerAtDebugKeepsACallOutOfTheInfoLogButNotAFailure(t *testing.T) {
+	buf := captureDefaultLog(t, slog.LevelInfo)
+	ok := NewCallLoggerAt(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody}, nil
+	}), slog.LevelDebug)
+	failing := NewCallLoggerAt(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial tcp: connection refused")
+	}), slog.LevelDebug)
+
+	if _, err := ok.RoundTrip(httptest.NewRequestWithContext(t.Context(), http.MethodGet, leakyURL, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("log %q, want a completed call kept out of an INFO log", buf.String())
+	}
+	_, _ = failing.RoundTrip(httptest.NewRequestWithContext(t.Context(), http.MethodGet, leakyURL, nil))
+	if !strings.Contains(buf.String(), "level=WARN") {
+		t.Errorf("log %q, want the failure as a WARN whatever the level", buf.String())
+	}
+}
+
 func TestCallLoggerReadsNoBodyBelowDebug(t *testing.T) {
 	captureDefaultLog(t, slog.LevelInfo)
 	body := io.NopCloser(strings.NewReader("untouched"))
