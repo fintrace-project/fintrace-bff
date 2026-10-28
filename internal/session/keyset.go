@@ -56,9 +56,8 @@ func newKeySet(
 	refreshEvery time.Duration,
 ) (*keySet, error) {
 	storage, err := jwkset.NewStorageFromHTTP(jwksURL, jwkset.HTTPClientStorageOptions{
-		Client: client,
-		// Background refresh must outlive the startup context
-		Ctx:             context.WithoutCancel(ctx),
+		Ctx:             ctx,
+		Client:          client,
 		HTTPTimeout:     keyFetchTimeout,
 		RefreshInterval: refreshEvery,
 		RefreshErrorHandler: func(ctx context.Context, err error) {

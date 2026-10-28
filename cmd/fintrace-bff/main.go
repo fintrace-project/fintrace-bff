@@ -39,13 +39,14 @@ func run() error {
 	defer shutdownTracingProvider(tp)
 
 	// A context that is cancelled when SIGINT (Ctrl+C) or SIGTERM (docker stop) arrives
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	lifetimeCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	store := memstore.New(time.Now)
-	go store.RunEviction(ctx, time.Minute)
+	go store.RunEviction(lifetimeCtx, time.Minute)
 
-	auth, err := session.NewAuth(context.Background(), cfg, newOutboundClient(), store)
+	// lifetimeCtx must live as long as the BFF: the realm's keys are refreshed in the background until it ends
+	auth, err := session.NewAuth(lifetimeCtx, cfg, newOutboundClient(), store)
 	if err != nil {
 		return err
 	}
@@ -62,7 +63,7 @@ func run() error {
 		return err
 	}
 
-	return serve(ctx, srv, ln)
+	return serve(lifetimeCtx, srv, ln)
 }
 
 func newOutboundClient() *http.Client {

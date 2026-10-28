@@ -33,12 +33,6 @@ type fakeJWKS struct {
 
 func newFakeJWKS(t *testing.T, keys ...jose.JSONWebKey) *fakeJWKS {
 	t.Helper()
-	f := startFakeJWKS(keys...)
-	t.Cleanup(f.srv.Close)
-	return f
-}
-
-func startFakeJWKS(keys ...jose.JSONWebKey) *fakeJWKS {
 	f := &fakeJWKS{keys: keys}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		f.fetches.Add(1)
@@ -62,6 +56,7 @@ func startFakeJWKS(keys ...jose.JSONWebKey) *fakeJWKS {
 		}
 		_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: keys})
 	}))
+	t.Cleanup(f.srv.Close)
 	return f
 }
 
@@ -308,9 +303,7 @@ func TestKeySetFinishesARefetchItsCallerAbandoned(t *testing.T) {
 
 func TestKeySetDropsAWithdrawnKeyOnTheBackgroundRefresh(t *testing.T) {
 	const refresh = 100 * time.Millisecond
-	// Not closed: the refresh goroutine runs on a context that is never cancelled, and would log
-	// a failed refresh every interval for the rest of the run against a closed server.
-	f := startFakeJWKS(publicJWK(issuerKey(), testKeyID))
+	f := newFakeJWKS(t, publicJWK(issuerKey(), testKeyID))
 	replacement := newRSAKey()
 	ks := newTestKeySet(t, f, time.Minute, refresh)
 	var withdrawnAt int32

@@ -258,7 +258,7 @@ func TestVerifierAcceptsAnIDTokenFromTheRealm(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := newFakeIssuer(t, nil)
 			transport := &countingTransport{}
-			// Cancelled once startup is over, as main's context is not: verification must not depend on it.
+			// Cancelling it stops only the background refresh: verification must not depend on it.
 			ctx, cancel := context.WithCancel(t.Context())
 			auth, err := newOIDC(ctx, testConfig(t, srv.URL), &http.Client{Transport: transport})
 			cancel()
