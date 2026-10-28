@@ -235,7 +235,7 @@ func TestRoutesHandlerNeverSignsOutThroughAnAPIPath(t *testing.T) {
 	tp, _ := newRecordingProvider(t)
 	auth := &stubAuth{}
 	// Exempt from CSRF by its prefix, so only the mux's redirect of the unclean path keeps it from sign-out.
-	req := httptest.NewRequest(http.MethodPost, "/api/../auth/sign-out", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/../auth/logout", nil)
 	req.Header.Set("Authorization", "Bearer caller-token")
 	req.Header.Set("Origin", "https://evil.example")
 
@@ -245,7 +245,7 @@ func TestRoutesHandlerNeverSignsOutThroughAnAPIPath(t *testing.T) {
 	if got := auth.ran(); len(got) != 0 {
 		t.Errorf("paths run = %q, want none", got)
 	}
-	// A client following the 307 sends a fresh request to /auth/sign-out, which the CSRF check covers
+	// A client following the 307 sends a fresh request to /auth/logout, which the CSRF check covers
 	if rec.Code != http.StatusTemporaryRedirect {
 		t.Errorf("status = %d, want the mux's %d to the clean path", rec.Code, http.StatusTemporaryRedirect)
 	}

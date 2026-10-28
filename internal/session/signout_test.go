@@ -50,7 +50,7 @@ func newSignoutAuth(t *testing.T) (*Auth, *fakeStore) {
 
 func signOut(t *testing.T, a *Auth, cookies ...*http.Cookie) *http.Response {
 	t.Helper()
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/sign-out", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/auth/logout", nil)
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}

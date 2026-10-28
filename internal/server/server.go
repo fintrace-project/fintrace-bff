@@ -18,9 +18,9 @@ import (
 )
 
 const healthzPath = "/healthz"
-const authSignInPath = "/auth/sign-in"
+const authSignInPath = "/auth/login"
 const authCallbackPath = "/auth/callback"
-const authSignOutPath = "/auth/sign-out"
+const authSignOutPath = "/auth/logout"
 
 type Authenticator interface {
 	SignIn(http.ResponseWriter, *http.Request)

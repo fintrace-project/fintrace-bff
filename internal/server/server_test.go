@@ -28,7 +28,7 @@ func TestSignOutIsPostOnly(t *testing.T) {
 	srv := httptest.NewServer(mustRoutes(t, noop.NewTracerProvider()))
 	t.Cleanup(srv.Close)
 
-	resp, err := srv.Client().Get(srv.URL + "/auth/sign-out")
+	resp, err := srv.Client().Get(srv.URL + "/auth/logout")
 	if err != nil {
 		t.Fatal(err)
 	}

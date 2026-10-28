@@ -24,7 +24,7 @@ func newTestAuth() *Auth {
 func requestSignIn(t *testing.T, a *Auth) (*http.Response, *url.URL, *http.Cookie) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	a.SignIn(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/sign-in", nil))
+	a.SignIn(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/auth/login", nil))
 	resp := rec.Result()
 
 	location, err := url.Parse(resp.Header.Get("Location"))
