@@ -15,7 +15,7 @@ type ExtClients struct {
 
 func MakeClients(cfg config.Config, tp trace.TracerProvider) ExtClients {
 	return ExtClients{
-		Core:        NewProxy(cfg.CoreURL, NewTransport(tp, 10*time.Second)),
-		MOKImporter: NewProxy(cfg.MOKImporterURL, NewTransport(tp, 5*time.Minute)),
+		Core:        NewProxy(cfg.CoreURL, NewTransport(tp, 10*time.Second), cfg),
+		MOKImporter: NewProxy(cfg.MOKImporterURL, NewTransport(tp, 5*time.Minute), cfg),
 	}
 }

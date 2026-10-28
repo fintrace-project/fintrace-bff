@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fintrace-project/fintrace-bff/internal/config"
 	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 )
 
@@ -82,9 +83,15 @@ func noContent(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+var publicOrigin = &url.URL{Scheme: "https", Host: "fintrace.example"}
+
+func testConfig() config.Config {
+	return config.Config{PublicOrigin: publicOrigin}
+}
+
 func proxyTo(target *url.URL, transport http.RoundTripper, req *http.Request) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
-	NewProxy(target, transport).ServeHTTP(rec, req)
+	NewProxy(target, transport, testConfig()).ServeHTTP(rec, req)
 	return rec
 }
 
@@ -243,4 +250,92 @@ func TestProxyAnswers504WhenCoreIsTooSlow(t *testing.T) {
 	rec := proxyTo(core.url, transport, httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil))
 
 	wantHTTPError(t, rec, http.StatusGatewayTimeout, httperr.UpstreamTimeout)
+}
+
+func TestProxyRewritesCoresOwnLocationAndStillDropsSetCookie(t *testing.T) {
+	var core *fakeCore
+	core = newFakeCore(t, func(w http.ResponseWriter, _ *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "planted", Value: "x"})
+		w.Header().Set("Location", core.url.String()+"/api/v1/workspaces/id-1")
+		w.WriteHeader(http.StatusCreated)
+	})
+
+	rec := proxyTo(core.url, http.DefaultTransport, httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", nil))
+
+	if loc := rec.Header().Get("Location"); loc != "https://fintrace.example/api/v1/workspaces/id-1" {
+		t.Errorf("Location = %q, want Core's rewritten to the public origin", loc)
+	}
+	if sc := rec.Header().Values("Set-Cookie"); len(sc) != 0 {
+		t.Errorf("Set-Cookie = %q reached the browser, want it dropped beside the rewrite", sc)
+	}
+}
+
+func TestAdjustLocation(t *testing.T) {
+	core := &url.URL{Scheme: "http", Host: "fintrace-core:8080"}
+	tests := []struct {
+		name     string
+		target   *url.URL
+		location string
+		want     string
+	}{
+		{name: "naming the upstream", target: core,
+			location: "http://fintrace-core:8080/api/v1/workspaces/id-1",
+			want:     "https://fintrace.example/api/v1/workspaces/id-1"},
+		{name: "query and fragment kept", target: core,
+			location: "http://fintrace-core:8080/api/v1/operations?page=2#top",
+			want:     "https://fintrace.example/api/v1/operations?page=2#top"},
+		{name: "the upstream's host in another case", target: core,
+			location: "http://FINTRACE-CORE:8080/api/v1/workspaces/id-1",
+			want:     "https://fintrace.example/api/v1/workspaces/id-1"},
+		{name: "the target's base path stripped",
+			target:   &url.URL{Scheme: "http", Host: "fintrace-core:8080", Path: "/base"},
+			location: "http://fintrace-core:8080/base/api/v1/workspaces/id-1",
+			want:     "https://fintrace.example/api/v1/workspaces/id-1"},
+		{name: "the target's base path with a trailing slash stripped",
+			target:   &url.URL{Scheme: "http", Host: "fintrace-core:8080", Path: "/base/"},
+			location: "http://fintrace-core:8080/base/api/v1/workspaces/id-1",
+			want:     "https://fintrace.example/api/v1/workspaces/id-1"},
+		{name: "exactly the base path",
+			target:   &url.URL{Scheme: "http", Host: "fintrace-core:8080", Path: "/base"},
+			location: "http://fintrace-core:8080/base",
+			want:     "https://fintrace.example"},
+		{name: "a path that only starts like the base path",
+			target:   &url.URL{Scheme: "http", Host: "fintrace-core:8080", Path: "/base"},
+			location: "http://fintrace-core:8080/basement/x",
+			want:     "https://fintrace.example/basement/x"},
+		{name: "relative, untouched", target: core,
+			location: "/api/v1/workspaces/id-1", want: "/api/v1/workspaces/id-1"},
+		{name: "another host, untouched", target: core,
+			location: "https://elsewhere.example/x", want: "https://elsewhere.example/x"},
+		{name: "the upstream's host on another scheme, untouched", target: core,
+			location: "https://fintrace-core:8080/x", want: "https://fintrace-core:8080/x"},
+		{name: "the upstream's name on another port, untouched", target: core,
+			location: "http://fintrace-core/x", want: "http://fintrace-core/x"},
+		{name: "malformed, untouched", target: core,
+			location: "http://fintrace-core:8080/%zz", want: "http://fintrace-core:8080/%zz"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &http.Response{Header: http.Header{"Location": {tt.location}},
+				Request: httptest.NewRequest(http.MethodPost, "/api/v1/workspaces", nil)}
+
+			adjustLocation(resp, publicOrigin, tt.target)
+
+			if got := resp.Header.Get("Location"); got != tt.want {
+				t.Errorf("Location = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAdjustLocationAddsNoneWhereThereWasNone(t *testing.T) {
+	resp := &http.Response{Header: http.Header{},
+		Request: httptest.NewRequest(http.MethodGet, "/api/v1/workspaces", nil)}
+
+	adjustLocation(resp, publicOrigin, &url.URL{Scheme: "http", Host: "fintrace-core:8080"})
+
+	if v, ok := resp.Header["Location"]; ok {
+		t.Errorf("Location = %q, want no header", v)
+	}
 }

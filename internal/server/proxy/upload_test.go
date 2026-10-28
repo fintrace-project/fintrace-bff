@@ -21,7 +21,7 @@ func newImporterMux(t *testing.T, respond http.HandlerFunc) (*http.ServeMux, *fa
 	t.Helper()
 	importer := newFakeCore(t, respond)
 	mux := http.NewServeMux()
-	RegisterImporterRoutes(mux, stubBearer, NewProxy(importer.url, http.DefaultTransport))
+	RegisterImporterRoutes(mux, stubBearer, NewProxy(importer.url, http.DefaultTransport, testConfig()))
 	return mux, importer
 }
 
@@ -111,7 +111,7 @@ func TestUploadIsStreamedNotBuffered(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	RegisterImporterRoutes(mux, stubBearer, NewProxy(target, http.DefaultTransport))
+	RegisterImporterRoutes(mux, stubBearer, NewProxy(target, http.DefaultTransport, testConfig()))
 
 	pr, pw := io.Pipe()
 	req := httptest.NewRequest(http.MethodPost, importPath, pr)
@@ -230,7 +230,7 @@ func TestOnlyTheUploadRouteOutlivesTheServerTimeouts(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	mux := http.NewServeMux()
-	upstream := NewProxy(importer.url, http.DefaultTransport)
+	upstream := NewProxy(importer.url, http.DefaultTransport, testConfig())
 	RegisterImporterRoutes(mux, stubBearer, upstream)
 	mux.Handle("POST /plain", upstream)
 	srv := httptest.NewUnstartedServer(mux)

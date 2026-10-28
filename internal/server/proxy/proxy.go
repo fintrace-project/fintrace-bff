@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
+	"github.com/fintrace-project/fintrace-bff/internal/config"
 	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -18,7 +20,7 @@ import (
 
 var strippedRequestHeaders = []string{"Cookie", "Traceparent", "Tracestate", "Baggage"}
 
-func NewProxy(target *url.URL, transport http.RoundTripper) *httputil.ReverseProxy {
+func NewProxy(target *url.URL, transport http.RoundTripper, cfg config.Config) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
@@ -27,14 +29,44 @@ func NewProxy(target *url.URL, transport http.RoundTripper) *httputil.ReversePro
 			}
 		},
 		Transport:      transport,
-		ModifyResponse: dropSetCookie,
+		ModifyResponse: responseModifier(cfg, target),
 		ErrorHandler:   upstreamFailed,
 	}
 }
 
-func dropSetCookie(resp *http.Response) error {
+func responseModifier(cfg config.Config, target *url.URL) func(*http.Response) error {
+	return func(resp *http.Response) error {
+		dropSetCookie(resp)
+		adjustLocation(resp, cfg.PublicOrigin, target)
+		return nil
+	}
+}
+
+func dropSetCookie(resp *http.Response) {
 	resp.Header.Del("Set-Cookie")
-	return nil
+}
+
+func adjustLocation(resp *http.Response, originURL *url.URL, target *url.URL) {
+	lh := "Location"
+	loc := resp.Header.Get(lh)
+	if loc != "" {
+		locURL, err := url.Parse(loc)
+		if err != nil {
+			slog.WarnContext(resp.Request.Context(), `Invalid "Location" header`, "error", err)
+			return
+		}
+		if locURL.IsAbs() && locURL.Scheme == target.Scheme && strings.EqualFold(locURL.Host, target.Host) {
+			locURL.Scheme, locURL.Host = originURL.Scheme, originURL.Host
+
+			// The proxy joins the target's base path on the request, so drop it on the response.
+			if base := strings.TrimSuffix(target.Path, "/"); base != "" {
+				if rest, ok := strings.CutPrefix(locURL.Path, base); ok && (rest == "" || strings.HasPrefix(rest, "/")) {
+					locURL.Path, locURL.RawPath = rest, ""
+				}
+			}
+			resp.Header.Set("Location", locURL.String())
+		}
+	}
 }
 
 func upstreamFailed(w http.ResponseWriter, r *http.Request, err error) {
