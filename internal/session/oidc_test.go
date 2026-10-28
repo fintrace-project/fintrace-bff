@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 
 	"github.com/fintrace-project/fintrace-bff/internal/config"
@@ -97,10 +98,14 @@ func testConfig(t *testing.T, issuer string) config.Config {
 
 type countingTransport struct {
 	calls atomic.Int32
+	certs atomic.Int32
 }
 
 func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	c.calls.Add(1)
+	if strings.HasSuffix(r.URL.Path, "/certs") {
+		c.certs.Add(1)
+	}
 	return http.DefaultTransport.RoundTrip(r)
 }
 
@@ -152,6 +157,18 @@ func TestNewOIDCRefusesAnUnusableProvider(t *testing.T) {
 			edit:    func(doc map[string]any) { delete(doc, "end_session_endpoint") },
 			wantErr: "end_session_endpoint"},
 		{name: "a server error", status: http.StatusInternalServerError, wantErr: "oidc discovery at"},
+		{name: "no jwks_uri",
+			edit:    func(doc map[string]any) { delete(doc, "jwks_uri") },
+			wantErr: "jwks_uri"},
+		{name: "a relative jwks_uri",
+			edit:    func(doc map[string]any) { doc["jwks_uri"] = "/certs" },
+			wantErr: "jwks_uri"},
+		{name: "a jwks_uri the realm does not serve",
+			edit:    func(doc map[string]any) { doc["jwks_uri"] = doc["jwks_uri"].(string) + "-missing" },
+			wantErr: "oidc keys at"},
+		{name: "only symmetric signing algorithms",
+			edit:    func(doc map[string]any) { doc["id_token_signing_alg_values_supported"] = []string{"HS256"} },
+			wantErr: "id_token_signing_alg_values_supported"},
 	}
 
 	for _, tt := range tests {
@@ -191,8 +208,13 @@ func idTokenClaims(issuer string) map[string]any {
 
 func signToken(t *testing.T, alg jose.SignatureAlgorithm, key any, claims map[string]any) string {
 	t.Helper()
+	return signTokenWithKeyID(t, alg, key, testKeyID, claims)
+}
+
+func signTokenWithKeyID(t *testing.T, alg jose.SignatureAlgorithm, key any, kid string, claims map[string]any) string {
+	t.Helper()
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: key},
-		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", testKeyID))
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,18 +258,20 @@ func TestVerifierAcceptsAnIDTokenFromTheRealm(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := newFakeIssuer(t, nil)
 			transport := &countingTransport{}
-			// Cancelled once startup is over, as main's context is not: key fetches must not depend on it.
+			// Cancelled once startup is over, as main's context is not: verification must not depend on it.
 			ctx, cancel := context.WithCancel(t.Context())
 			auth, err := newOIDC(ctx, testConfig(t, srv.URL), &http.Client{Transport: transport})
 			cancel()
 			if err != nil {
 				t.Fatalf("newOIDC() error = %v", err)
 			}
+			if got := transport.certs.Load(); got != 1 {
+				t.Fatalf("JWKS fetches through the client passed in = %d, want 1 at startup", got)
+			}
 			claims := idTokenClaims(srv.URL)
 			if tt.edit != nil {
 				tt.edit(claims)
 			}
-			discoveryCalls := transport.calls.Load()
 
 			idToken, err := auth.Verifier.Verify(t.Context(), signToken(t, jose.RS256, issuerKey(), claims))
 
@@ -261,8 +285,8 @@ func TestVerifierAcceptsAnIDTokenFromTheRealm(t *testing.T) {
 			if idToken.Nonce != "nonce-1" {
 				t.Errorf("Nonce = %q, want %q", idToken.Nonce, "nonce-1")
 			}
-			if transport.calls.Load() == discoveryCalls {
-				t.Error("the JWKS was not fetched through the client passed in")
+			if got := transport.certs.Load(); got != 1 {
+				t.Errorf("JWKS fetches = %d after verifying, want still 1", got)
 			}
 		})
 	}
@@ -327,5 +351,45 @@ func TestVerifierRefusesAnIDTokenItCannotTrust(t *testing.T) {
 				t.Errorf("error = %q, want it to mention %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// Keycloak advertises HS256 beside RS256; go-oidc's provider dropped it, and newOIDC must too.
+func TestVerifierRefusesHS256EvenWhenTheRealmAdvertisesIt(t *testing.T) {
+	srv := newFakeIssuer(t, func(doc map[string]any) {
+		doc["id_token_signing_alg_values_supported"] = []string{"HS256", "RS256"}
+	})
+	auth, err := newOIDC(t.Context(), testConfig(t, srv.URL), http.DefaultClient)
+	if err != nil {
+		t.Fatalf("newOIDC() error = %v", err)
+	}
+	token := signToken(t, jose.HS256, issuerKey().N.Bytes(), idTokenClaims(srv.URL))
+
+	for name, verifier := range map[string]*oidc.IDTokenVerifier{
+		"Verifier": auth.Verifier, "AccessVerifier": auth.AccessVerifier,
+	} {
+		if _, err := verifier.Verify(t.Context(), token); err == nil {
+			t.Errorf("%s accepted an HS256 token", name)
+		}
+	}
+}
+
+// oidc.NewVerifier defaults to RS256 alone; only discovery's list lets the realm sign with another.
+func TestVerifierAcceptsEveryAlgorithmTheRealmAdvertises(t *testing.T) {
+	srv := newFakeIssuer(t, func(doc map[string]any) {
+		doc["id_token_signing_alg_values_supported"] = []string{"RS256", "PS256"}
+	})
+	auth, err := newOIDC(t.Context(), testConfig(t, srv.URL), http.DefaultClient)
+	if err != nil {
+		t.Fatalf("newOIDC() error = %v", err)
+	}
+	token := signToken(t, jose.PS256, issuerKey(), idTokenClaims(srv.URL))
+
+	for name, verifier := range map[string]*oidc.IDTokenVerifier{
+		"Verifier": auth.Verifier, "AccessVerifier": auth.AccessVerifier,
+	} {
+		if _, err := verifier.Verify(t.Context(), token); err != nil {
+			t.Errorf("%s refused a PS256 token the realm advertises: %v", name, err)
+		}
 	}
 }

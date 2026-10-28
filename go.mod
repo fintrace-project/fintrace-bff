@@ -3,6 +3,7 @@ module github.com/fintrace-project/fintrace-bff
 go 1.27.2
 
 require (
+	github.com/MicahParks/jwkset v0.11.3
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
@@ -11,6 +12,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.24.0
+	golang.org/x/time v0.16.0
 )
 
 require (
