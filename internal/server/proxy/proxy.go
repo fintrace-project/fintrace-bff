@@ -20,6 +20,9 @@ import (
 
 var strippedRequestHeaders = []string{"Cookie", "Traceparent", "Tracestate", "Baggage"}
 
+// SecurityHeaders are the headers the BFF sets once on every response; an upstream's own are dropped.
+var SecurityHeaders = []string{"X-Content-Type-Options", "Referrer-Policy", "Content-Security-Policy", "Strict-Transport-Security"}
+
 func NewProxy(target *url.URL, transport http.RoundTripper, cfg config.Config) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -37,6 +40,7 @@ func NewProxy(target *url.URL, transport http.RoundTripper, cfg config.Config) *
 func responseModifier(cfg config.Config, target *url.URL) func(*http.Response) error {
 	return func(resp *http.Response) error {
 		dropSetCookie(resp)
+		dropSecurityHeaders(resp)
 		adjustLocation(resp, cfg.PublicOrigin, target)
 		return nil
 	}
@@ -44,6 +48,13 @@ func responseModifier(cfg config.Config, target *url.URL) func(*http.Response) e
 
 func dropSetCookie(resp *http.Response) {
 	resp.Header.Del("Set-Cookie")
+}
+
+// ReverseProxy adds an upstream's headers to those already set, so a second copy would reach the browser.
+func dropSecurityHeaders(resp *http.Response) {
+	for _, h := range SecurityHeaders {
+		resp.Header.Del(h)
+	}
 }
 
 func adjustLocation(resp *http.Response, originURL *url.URL, target *url.URL) {

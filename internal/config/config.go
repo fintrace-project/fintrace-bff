@@ -9,17 +9,18 @@ import (
 )
 
 type Config struct {
-	ListenAddr     string        // BFF_LISTEN_ADDR
-	LogLevel       slog.Level    // BFF_LOG_LEVEL
-	IssuerURI      *url.URL      // FINTRACE_OAUTH2_ISSUER_URI
-	CoreURL        *url.URL      // BFF_CORE_URL
-	MOKImporterURL *url.URL      // BFF_MOK_IMPORTER_URL
-	WebURL         *url.URL      // BFF_WEB_URL
-	PublicOrigin   *url.URL      // BFF_PUBLIC_ORIGIN
-	ClientID       string        // BFF_OAUTH2_CLIENT_ID
-	ClientSecret   string        // BFF_OAUTH2_CLIENT_SECRET
-	SessionIdle    time.Duration // BFF_SESSION_IDLE
-	SessionMax     time.Duration // BFF_SESSION_MAX
+	ListenAddr            string        // BFF_LISTEN_ADDR
+	LogLevel              slog.Level    // BFF_LOG_LEVEL
+	IssuerURI             *url.URL      // FINTRACE_OAUTH2_ISSUER_URI
+	CoreURL               *url.URL      // BFF_CORE_URL
+	MOKImporterURL        *url.URL      // BFF_MOK_IMPORTER_URL
+	WebURL                *url.URL      // BFF_WEB_URL
+	PublicOrigin          *url.URL      // BFF_PUBLIC_ORIGIN
+	ClientID              string        // BFF_OAUTH2_CLIENT_ID
+	ClientSecret          string        // BFF_OAUTH2_CLIENT_SECRET
+	SessionIdle           time.Duration // BFF_SESSION_IDLE
+	SessionMax            time.Duration // BFF_SESSION_MAX
+	ContentSecurityPolicy string        // BFF_CONTENT_SECURITY_POLICY
 }
 
 type errorCollector struct {
@@ -39,17 +40,18 @@ func Load(getenv func(string) string) (Config, error) {
 	ec := &errorCollector{}
 
 	cfg := Config{
-		ListenAddr:     getOptionalEnv(getenv, "BFF_LISTEN_ADDR", ":8080"),
-		LogLevel:       asLogLevel(getOptionalEnv(getenv, "BFF_LOG_LEVEL", "INFO"), ec),
-		IssuerURI:      getRequiredEnvAsURL(getenv, "FINTRACE_OAUTH2_ISSUER_URI", ec),
-		CoreURL:        getRequiredEnvAsURL(getenv, "BFF_CORE_URL", ec),
-		MOKImporterURL: getRequiredEnvAsURL(getenv, "BFF_MOK_IMPORTER_URL", ec),
-		WebURL:         getRequiredEnvAsURL(getenv, "BFF_WEB_URL", ec),
-		PublicOrigin:   getRequiredEnvAsURL(getenv, "BFF_PUBLIC_ORIGIN", ec, noPath),
-		ClientID:       getRequiredEnv(getenv, "BFF_OAUTH2_CLIENT_ID", ec),
-		ClientSecret:   getRequiredEnv(getenv, "BFF_OAUTH2_CLIENT_SECRET", ec),
-		SessionIdle:    getOptionalEnvAsDuration(getenv, "BFF_SESSION_IDLE", "168h", ec),
-		SessionMax:     getOptionalEnvAsDuration(getenv, "BFF_SESSION_MAX", "720h", ec),
+		ListenAddr:            getOptionalEnv(getenv, "BFF_LISTEN_ADDR", ":8080"),
+		LogLevel:              asLogLevel(getOptionalEnv(getenv, "BFF_LOG_LEVEL", "INFO"), ec),
+		IssuerURI:             getRequiredEnvAsURL(getenv, "FINTRACE_OAUTH2_ISSUER_URI", ec),
+		CoreURL:               getRequiredEnvAsURL(getenv, "BFF_CORE_URL", ec),
+		MOKImporterURL:        getRequiredEnvAsURL(getenv, "BFF_MOK_IMPORTER_URL", ec),
+		WebURL:                getRequiredEnvAsURL(getenv, "BFF_WEB_URL", ec),
+		PublicOrigin:          getRequiredEnvAsURL(getenv, "BFF_PUBLIC_ORIGIN", ec, noPath),
+		ClientID:              getRequiredEnv(getenv, "BFF_OAUTH2_CLIENT_ID", ec),
+		ClientSecret:          getRequiredEnv(getenv, "BFF_OAUTH2_CLIENT_SECRET", ec),
+		SessionIdle:           getOptionalEnvAsDuration(getenv, "BFF_SESSION_IDLE", "168h", ec),
+		SessionMax:            getOptionalEnvAsDuration(getenv, "BFF_SESSION_MAX", "720h", ec),
+		ContentSecurityPolicy: getOptionalEnv(getenv, "BFF_CONTENT_SECURITY_POLICY", ""),
 	}
 
 	if cfg.SessionIdle > 0 && cfg.SessionMax > 0 && cfg.SessionIdle > cfg.SessionMax {

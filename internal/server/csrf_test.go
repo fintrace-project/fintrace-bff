@@ -12,7 +12,10 @@ import (
 const testPublicOrigin = "https://fintrace.example"
 
 func testConfig() config.Config {
-	return config.Config{PublicOrigin: &url.URL{Scheme: "https", Host: "fintrace.example"}}
+	return config.Config{
+		IssuerURI:    &url.URL{Scheme: "https", Host: "realm.example", Path: "/realms/fintrace"},
+		PublicOrigin: &url.URL{Scheme: "https", Host: "fintrace.example"},
+	}
 }
 
 func TestCSRF(t *testing.T) {
