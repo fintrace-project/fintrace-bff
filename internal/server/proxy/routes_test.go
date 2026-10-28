@@ -133,7 +133,8 @@ func TestADotDotPathIsRedirectedToItsCleanFormWhichIsNotListed(t *testing.T) {
 	}
 }
 
-func TestAnUnlistedMethodOnAListedPathIs405(t *testing.T) {
+// The Core routes alone; behind RoutesHandler the /api/ fallback answers 404 instead (server/web_test.go).
+func TestAnUnlistedMethodOnAListedPathIs405OnTheCoreRoutesAlone(t *testing.T) {
 	mux, upstream := newCoreMux()
 
 	rec := serve(mux, http.MethodPatch, "/api/v1/workspaces/id-1")
