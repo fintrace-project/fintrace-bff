@@ -47,6 +47,8 @@ var coreRoutes = []string{
 	"DELETE /api/v1/workspaces/{workspaceId}/transfers/{transferId}",
 
 	"GET /api/v1/workspaces/{workspaceId}/statistics/balances/accounts",
+
+	"GET /api/v1/users/current",
 }
 
 var mokImporterRoutes = []string{"POST /api/v1/workspaces/{workspaceId}/import"}
