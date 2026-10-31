@@ -83,7 +83,7 @@ func TestEveryAnswerCarriesEachSecurityHeaderOnce(t *testing.T) {
 	}
 	tp := noop.NewTracerProvider()
 	cfg := testConfig()
-	upstreams := proxy.ExtClients{
+	upstreams := proxy.UpstreamProxies{
 		Core:        proxy.NewProxy(target, proxy.NewTransport(tp, time.Second, slog.LevelInfo), cfg),
 		MOKImporter: http.NotFoundHandler(),
 		Web:         proxy.NewProxy(target, proxy.NewTransport(tp, time.Second, slog.LevelDebug), cfg),

@@ -35,7 +35,7 @@ func RoutesHandler(
 	tp trace.TracerProvider,
 	auth Authenticator,
 	cfg config.Config,
-	cl proxy.ExtClients,
+	proxies proxy.UpstreamProxies,
 ) (http.Handler, error) {
 	mux := http.NewServeMux()
 	authn := authenticate(auth)
@@ -44,9 +44,9 @@ func RoutesHandler(
 	registerHealth(mux)
 	registerAuth(mux, auth)
 	registerNotFound(mux)
-	proxy.RegisterWebRoutes(mux, cl.Web)
-	proxy.RegisterCoreRoutes(mux, authn, cl.Core)
-	proxy.RegisterImporterRoutes(mux, authn, cl.MOKImporter)
+	proxy.RegisterWebRoutes(mux, proxies.Web)
+	proxy.RegisterCoreRoutes(mux, authn, proxies.Core)
+	proxy.RegisterImporterRoutes(mux, authn, proxies.MOKImporter)
 
 	// Wrappers
 	h, err := withCSRF(mux, cfg)

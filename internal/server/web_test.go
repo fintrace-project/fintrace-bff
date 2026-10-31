@@ -58,7 +58,7 @@ func (web *fakeWeb) received() []webCall {
 func mustWebRoutes(t *testing.T, auth *stubAuth, web *fakeWeb, core *fakeCore) http.Handler {
 	t.Helper()
 	tp := noop.NewTracerProvider()
-	upstreams := proxy.ExtClients{
+	upstreams := proxy.UpstreamProxies{
 		Core:        proxy.NewProxy(core.url, proxy.NewTransport(tp, time.Second, slog.LevelInfo), testConfig()),
 		MOKImporter: http.NotFoundHandler(),
 		Web:         proxy.NewProxy(web.url, proxy.NewTransport(tp, time.Second, slog.LevelDebug), testConfig()),

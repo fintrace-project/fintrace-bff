@@ -51,9 +51,8 @@ func run() error {
 		return err
 	}
 
-	cl := proxy.MakeClients(cfg, tp)
-
-	srv, err := newHTTPServer(cfg, tp, auth, cl)
+	proxies := proxy.MakeUpstreamProxies(cfg, tp)
+	srv, err := newHTTPServer(cfg, tp, auth, proxies)
 	if err != nil {
 		return err
 	}
@@ -97,9 +96,9 @@ func newHTTPServer(
 	cfg config.Config,
 	tp trace.TracerProvider,
 	auth server.Authenticator,
-	cl proxy.ExtClients,
+	proxies proxy.UpstreamProxies,
 ) (*http.Server, error) {
-	handler, err := server.RoutesHandler(tp, auth, cfg, cl)
+	handler, err := server.RoutesHandler(tp, auth, cfg, proxies)
 	if err != nil {
 		return nil, err
 	}

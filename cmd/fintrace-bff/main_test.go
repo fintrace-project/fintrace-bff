@@ -27,7 +27,7 @@ func testConfig(listenAddr string) config.Config {
 
 func mustHTTPServer(t *testing.T, cfg config.Config) *http.Server {
 	t.Helper()
-	upstreams := proxy.ExtClients{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler(),
+	upstreams := proxy.UpstreamProxies{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler(),
 		Web: http.NotFoundHandler()}
 	srv, err := newHTTPServer(cfg, noop.NewTracerProvider(), &session.Auth{}, upstreams)
 	if err != nil {

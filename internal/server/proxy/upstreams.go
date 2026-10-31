@@ -9,14 +9,14 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type ExtClients struct {
+type UpstreamProxies struct {
 	Core        http.Handler
 	MOKImporter http.Handler
 	Web         http.Handler
 }
 
-func MakeClients(cfg config.Config, tp trace.TracerProvider) ExtClients {
-	return ExtClients{
+func MakeUpstreamProxies(cfg config.Config, tp trace.TracerProvider) UpstreamProxies {
+	return UpstreamProxies{
 		Core:        NewProxy(cfg.CoreURL, NewTransport(tp, 10*time.Second, slog.LevelInfo), cfg),
 		MOKImporter: NewProxy(cfg.MOKImporterURL, NewTransport(tp, 5*time.Minute, slog.LevelInfo), cfg),
 		Web:         NewProxy(cfg.WebURL, NewTransport(tp, 10*time.Second, slog.LevelDebug), cfg),

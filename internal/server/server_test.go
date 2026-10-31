@@ -13,7 +13,7 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/session"
 )
 
-var noUpstreams = proxy.ExtClients{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler(), Web: http.NotFoundHandler()}
+var noUpstreams = proxy.UpstreamProxies{Core: http.NotFoundHandler(), MOKImporter: http.NotFoundHandler(), Web: http.NotFoundHandler()}
 
 func mustRoutes(t *testing.T, tp trace.TracerProvider) http.Handler {
 	t.Helper()
