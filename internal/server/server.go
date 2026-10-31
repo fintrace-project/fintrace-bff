@@ -21,11 +21,13 @@ import (
 const healthzPath = "/healthz"
 const authSignInPath = "/auth/login"
 const authCallbackPath = "/auth/callback"
+const authSessionStatePath = "/auth/session"
 const authSignOutPath = "/auth/logout"
 
 type Authenticator interface {
 	SignIn(http.ResponseWriter, *http.Request)
 	Callback(http.ResponseWriter, *http.Request)
+	SessionState(http.ResponseWriter, *http.Request)
 	SignOut(http.ResponseWriter, *http.Request)
 	BearerFromSession(http.Handler) http.Handler
 	VerifyBearer(http.Handler) http.Handler
@@ -110,6 +112,7 @@ func registerHealth(mux *http.ServeMux) {
 func registerAuth(mux *http.ServeMux, auth Authenticator) {
 	registerAuthSignIn(mux, auth)
 	registerAuthCallback(mux, auth)
+	registerAuthSessionState(mux, auth)
 	registerAuthSignOut(mux, auth)
 }
 
@@ -122,6 +125,12 @@ func registerAuthSignIn(mux *http.ServeMux, auth Authenticator) {
 func registerAuthCallback(mux *http.ServeMux, auth Authenticator) {
 	const path = http.MethodGet + " " + authCallbackPath
 	mux.HandleFunc(path, auth.Callback)
+	slog.Info("route registered", "pattern", path)
+}
+
+func registerAuthSessionState(mux *http.ServeMux, auth Authenticator) {
+	const path = http.MethodGet + " " + authSessionStatePath
+	mux.HandleFunc(path, auth.SessionState)
 	slog.Info("route registered", "pattern", path)
 }
 

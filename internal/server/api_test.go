@@ -19,9 +19,10 @@ import (
 const testBearer = "Bearer test-token"
 
 const (
-	pathSession = "session"
-	pathToken   = "token"
-	pathSignOut = "sign-out"
+	pathSession      = "session"
+	pathToken        = "token"
+	pathSignOut      = "sign-out"
+	pathSessionState = "session-state"
 )
 
 type stubAuth struct {
@@ -29,8 +30,11 @@ type stubAuth struct {
 	paths []string
 }
 
-func (*stubAuth) SignIn(http.ResponseWriter, *http.Request)    {}
-func (*stubAuth) Callback(http.ResponseWriter, *http.Request)  {}
+func (*stubAuth) SignIn(http.ResponseWriter, *http.Request)   {}
+func (*stubAuth) Callback(http.ResponseWriter, *http.Request) {}
+func (a *stubAuth) SessionState(http.ResponseWriter, *http.Request) {
+	a.record(pathSessionState)
+}
 func (a *stubAuth) SignOut(http.ResponseWriter, *http.Request) { a.record(pathSignOut) }
 
 func (a *stubAuth) BearerFromSession(next http.Handler) http.Handler {
@@ -230,6 +234,47 @@ func TestRoutesHandlerLetsABearerWriteWithoutAnOrigin(t *testing.T) {
 	}
 	if got := auth.ran(); !slices.Equal(got, []string{pathToken}) {
 		t.Errorf("paths run = %q, want only %q", got, pathToken)
+	}
+}
+
+func TestSessionStateIsGetOnlyAndNeedsNoSession(t *testing.T) {
+	tests := []struct {
+		name     string
+		method   string
+		bearer   bool
+		wantRun  []string
+		wantCode int
+	}{
+		{name: "GET reaches it, no session asked for", method: http.MethodGet,
+			wantRun: []string{pathSessionState}, wantCode: http.StatusOK},
+		{name: "HEAD reaches it", method: http.MethodHead,
+			wantRun: []string{pathSessionState}, wantCode: http.StatusOK},
+		{name: "a Bearer header does not divert it to the token path", method: http.MethodGet, bearer: true,
+			wantRun: []string{pathSessionState}, wantCode: http.StatusOK},
+		// Falls through to the /auth/ fallback, as a GET on sign-out does
+		{name: "POST never reaches it", method: http.MethodPost,
+			wantCode: http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tp, _ := newRecordingProvider(t)
+			auth := &stubAuth{}
+			req := httptest.NewRequest(tt.method, "/auth/session", nil)
+			req.Header.Set("Origin", testConfig().PublicOrigin.String())
+			if tt.bearer {
+				req.Header.Set("Authorization", "Bearer caller-token")
+			}
+
+			rec := httptest.NewRecorder()
+			mustAPIRoutes(t, tp, auth, newFakeCore(t)).ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantCode)
+			}
+			if got := auth.ran(); !slices.Equal(got, tt.wantRun) {
+				t.Errorf("paths run = %q, want %q", got, tt.wantRun)
+			}
+		})
 	}
 }
 
