@@ -13,6 +13,7 @@ import (
 const (
 	traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
 	spanID  = "00f067aa0ba902b7"
+	userID  = "0192f3a0-0000-7000-8000-000000000001"
 )
 
 func newLogger(t *testing.T) (*slog.Logger, *bytes.Buffer) {
@@ -52,6 +53,18 @@ func TestWithTraceID(t *testing.T) {
 			want: []string{"k=v", "traceId=" + traceID}},
 		{name: "a group keeps the ids, nested under it", ctx: spanContext, group: "g",
 			want: []string{"g.traceId=" + traceID}},
+		{name: "a user id in the context is logged",
+			ctx:     func(t *testing.T) context.Context { return WithUserID(t.Context(), userID) },
+			want:    []string{"userId=" + userID},
+			notWant: []string{"traceId="}},
+		{name: "a user id is logged beside the span's ids",
+			ctx:  func(t *testing.T) context.Context { return WithUserID(spanContext(t), userID) },
+			want: []string{"userId=" + userID, "traceId=" + traceID}},
+		{name: "an empty user id is left out",
+			ctx:     func(t *testing.T) context.Context { return WithUserID(t.Context(), "") },
+			notWant: []string{"userId="}},
+		{name: "no user id, no user", ctx: spanContext,
+			notWant: []string{"userId="}},
 	}
 
 	for _, tt := range tests {

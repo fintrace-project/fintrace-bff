@@ -108,7 +108,7 @@ func newRefreshFixture(t *testing.T, realm *refreshRealm) *refreshFixture {
 	clock := func() time.Time { return f.now }
 	f.store = newFakeStore(clock)
 
-	a, err := NewAuth(t.Context(), testConfig(t, f.srv.URL), http.DefaultClient, f.store)
+	a, err := NewAuth(t.Context(), testConfig(t, f.srv.URL), http.DefaultClient, &fakeUserIDResolver{}, f.store)
 	if err != nil {
 		t.Fatalf("NewAuth() error = %v", err)
 	}

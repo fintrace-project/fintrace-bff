@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fintrace-project/fintrace-bff/internal/httperr"
+	"github.com/fintrace-project/fintrace-bff/internal/logging"
 )
 
 const (
@@ -28,7 +29,8 @@ func (a *Auth) BearerFromSession(next http.Handler) http.Handler {
 			return
 		}
 
-		out := r.Clone(r.Context())
+		out := r.Clone(logging.WithUserID(r.Context(), s.UserID))
+
 		out.Header.Set("Authorization", "Bearer "+s.AccessToken)
 		next.ServeHTTP(w, out)
 	})
@@ -57,6 +59,9 @@ func (a *Auth) loadAndUpdate(ctx context.Context, key StoreKey) (Session, error)
 	if err != nil {
 		return Session{}, err
 	}
+
+	// Shared only by requests of this one session, so all of them are this user's
+	ctx = logging.WithUserID(ctx, s.UserID)
 
 	now := a.now()
 	switch {

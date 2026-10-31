@@ -7,6 +7,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+type userIDKey struct{}
+
+func WithUserID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, userIDKey{}, id)
+}
+
 type traceHandler struct {
 	slog.Handler
 }
@@ -29,6 +35,9 @@ func (h traceHandler) Handle(ctx context.Context, r slog.Record) error {
 			slog.String("traceId", sc.TraceID().String()),
 			slog.String("spanId", sc.SpanID().String()),
 		)
+	}
+	if id, ok := ctx.Value(userIDKey{}).(string); ok && id != "" {
+		r.AddAttrs(slog.String("userId", id))
 	}
 	return h.Handler.Handle(ctx, r)
 }

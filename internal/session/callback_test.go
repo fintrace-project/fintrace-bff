@@ -73,7 +73,7 @@ func startSignIn(t *testing.T, stub *tokenStub) (*Auth, *http.Cookie, signInCook
 	t.Helper()
 	stub.t = t
 	srv := newFakeRealm(t, nil, stub.serve)
-	a, err := NewAuth(t.Context(), testConfig(t, srv.URL), http.DefaultClient, newFakeStore(time.Now))
+	a, err := NewAuth(t.Context(), testConfig(t, srv.URL), http.DefaultClient, &fakeUserIDResolver{}, newFakeStore(time.Now))
 	if err != nil {
 		t.Fatalf("NewAuth() error = %v", err)
 	}

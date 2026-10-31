@@ -47,7 +47,7 @@ func requestFor(pattern string) (method, path string) {
 }
 
 func TestEveryCoreRouteReachesTheUpstreamWithABearer(t *testing.T) {
-	for _, pattern := range coreRoutes {
+	for _, pattern := range coreProxiedRoutes {
 		t.Run(pattern, func(t *testing.T) {
 			mux, upstream := newCoreMux()
 			method, path := requestFor(pattern)
@@ -70,7 +70,7 @@ func TestEveryCoreRouteReachesTheUpstreamWithABearer(t *testing.T) {
 
 func TestCoreRoutesAreUnique(t *testing.T) {
 	seen := map[string]bool{}
-	for _, pattern := range coreRoutes {
+	for _, pattern := range coreProxiedRoutes {
 		if seen[pattern] {
 			t.Errorf("%q is listed twice", pattern)
 		}

@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/fintrace-project/fintrace-bff/internal/config"
+	"github.com/fintrace-project/fintrace-bff/internal/coreapi"
 	"github.com/fintrace-project/fintrace-bff/internal/logging"
 	"github.com/fintrace-project/fintrace-bff/internal/server"
 	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
@@ -45,13 +46,16 @@ func run() error {
 	store := memstore.New(time.Now)
 	go store.RunEviction(lifetimeCtx, time.Minute)
 
+	transports := proxy.MakeUpstreamTransports(tp)
+
+	coreUsersAPI := coreapi.NewUsersAPI(cfg.CoreURL, &http.Client{Transport: transports.Core, Timeout: 10 * time.Second})
 	// lifetimeCtx must live as long as the BFF: the realm's keys are refreshed in the background until it ends
-	auth, err := session.NewAuth(lifetimeCtx, cfg, newOutboundClient(), store)
+	auth, err := session.NewAuth(lifetimeCtx, cfg, newOutboundClient(), coreUsersAPI, store)
 	if err != nil {
 		return err
 	}
 
-	proxies := proxy.MakeUpstreamProxies(cfg, tp)
+	proxies := proxy.MakeUpstreamProxies(cfg, transports)
 	srv, err := newHTTPServer(cfg, tp, auth, proxies)
 	if err != nil {
 		return err

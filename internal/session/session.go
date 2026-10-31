@@ -1,8 +1,12 @@
 package session
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type Session struct {
+	UserID        string
 	Subject       string
 	AccessToken   string
 	RefreshToken  string
@@ -11,6 +15,10 @@ type Session struct {
 	IDToken       string
 	CreatedAt     time.Time
 	LastSeen      time.Time
+}
+
+type UserIDResolver interface {
+	UserID(ctx context.Context, accessToken string) (string, error)
 }
 
 func deadline(s Session, idle, max time.Duration) time.Time {

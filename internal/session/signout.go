@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/fintrace-project/fintrace-bff/internal/logging"
 )
 
 func (a *Auth) SignOut(w http.ResponseWriter, r *http.Request) {
@@ -11,22 +13,22 @@ func (a *Auth) SignOut(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, configureSecureCookie(sessionCookie, "", -1)) // Clean session cookie explicitly
 	w.Header().Set("Cache-Control", "no-store")
 
+	ctx := r.Context()
 	idToken := ""
-	sub := ""
 	if c != nil && c.Value != "" {
 		key := asStoreKey(c.Value)
-		s, err := a.store.Load(r.Context(), key)
+		s, err := a.store.Load(ctx, key)
 
 		if err != nil && !errors.Is(err, ErrNoSession) {
-			slog.ErrorContext(r.Context(), "Session not loaded", "error", err)
+			slog.ErrorContext(ctx, "Session not loaded", "error", err)
 			http.Error(w, "sign-out unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		if err := a.store.Delete(r.Context(), key); err != nil {
-			slog.WarnContext(r.Context(), "Session not deleted", "error", err)
+		ctx = logging.WithUserID(ctx, s.UserID)
+		if err := a.store.Delete(ctx, key); err != nil {
+			slog.WarnContext(ctx, "Session not deleted", "error", err)
 		}
 		idToken = s.IDToken
-		sub = s.Subject
 	}
 
 	u := *a.oidc.EndSessionURL
@@ -39,9 +41,10 @@ func (a *Auth) SignOut(w http.ResponseWriter, r *http.Request) {
 	u.RawQuery = q.Encode()
 
 	http.Redirect(w, r, u.String(), http.StatusSeeOther)
-	if sub != "" {
-		slog.InfoContext(r.Context(), "Signed out", "sub", sub)
+	// Sign-in never stores a session without its ID token, so none means no session was found
+	if idToken != "" {
+		slog.InfoContext(ctx, "Signed out")
 	} else {
-		slog.InfoContext(r.Context(), "Signed out without a session")
+		slog.InfoContext(ctx, "Signed out without a session")
 	}
 }

@@ -87,9 +87,15 @@ func (a *Auth) completeSignIn(w http.ResponseWriter, r *http.Request, idToken *o
 		}
 	}
 
+	userID, err := a.userIDResolver.UserID(r.Context(), token.AccessToken)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "Internal user id not resolved", "sub", idToken.Subject, "error", err)
+		http.Error(w, "sign-in unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	now := a.now()
-
 	s := Session{
+		UserID:        userID,
 		Subject:       idToken.Subject,
 		AccessToken:   token.AccessToken,
 		RefreshToken:  token.RefreshToken,
@@ -109,7 +115,7 @@ func (a *Auth) completeSignIn(w http.ResponseWriter, r *http.Request, idToken *o
 
 	http.SetCookie(w, configureSecureCookie(sessionCookie, id, int(a.sessionMaxAge.Seconds())))
 
-	slog.InfoContext(r.Context(), "Signed in", "sub", idToken.Subject)
+	slog.InfoContext(r.Context(), "Signed in", "sub", idToken.Subject, "userId", userID)
 	w.Header().Set("Cache-Control", "no-store")
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)

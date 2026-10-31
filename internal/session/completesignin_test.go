@@ -83,6 +83,9 @@ func TestCallbackStoresTheSessionUnderTheHashOfItsID(t *testing.T) {
 	if s.Subject != "user-1" || s.AccessToken != "access-1" || s.RefreshToken != "refresh-1" {
 		t.Errorf("session = %+v, want the realm's subject and tokens", s)
 	}
+	if s.UserID != testUserID {
+		t.Errorf("UserID = %q, want %q, Core's id for the subject", s.UserID, testUserID)
+	}
 	if s.IDToken == "" {
 		t.Error("the raw ID token was not kept, and sign-out needs it")
 	}
@@ -173,6 +176,30 @@ func TestCallbackAnswers503WhenTheSessionCannotBeSaved(t *testing.T) {
 	}
 	if c := sessionCookieIn(resp); c != nil {
 		t.Errorf("a session cookie was set for a session that was not saved: %+v", c)
+	}
+	if !signInCookieCleared(resp) {
+		t.Error("the sign-in cookie was not cleared")
+	}
+}
+
+func TestCallbackAnswers503WhenTheUserIDIsNotResolved(t *testing.T) {
+	stub := &tokenStub{}
+	a, cookie, scv := startSignIn(t, stub)
+	a.userIDResolver = &fakeUserIDResolver{err: errors.New("core unavailable")}
+
+	resp := callback(t, a, cookie, url.Values{"state": {scv.state}, "code": {"code-1"}})
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusServiceUnavailable)
+	}
+	if body, _ := io.ReadAll(resp.Body); string(body) != "sign-in unavailable\n" {
+		t.Errorf("body = %q, want the generic answer", body)
+	}
+	if c := sessionCookieIn(resp); c != nil {
+		t.Errorf("a session cookie was set without a user id: %+v", c)
+	}
+	if n := len(storeOf(a).entries); n != 0 {
+		t.Errorf("%d sessions stored, want none without a user id", n)
 	}
 	if !signInCookieCleared(resp) {
 		t.Error("the sign-in cookie was not cleared")

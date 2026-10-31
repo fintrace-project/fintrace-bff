@@ -9,7 +9,7 @@ import (
 	"github.com/fintrace-project/fintrace-bff/internal/httperr"
 )
 
-var coreRoutes = []string{
+var coreProxiedRoutes = []string{
 	"GET /api/v1/workspaces",
 	"POST /api/v1/workspaces",
 	"GET /api/v1/workspaces/{workspaceId}",
@@ -51,7 +51,7 @@ var coreRoutes = []string{
 	"GET /api/v1/users/current",
 }
 
-var mokImporterRoutes = []string{"POST /api/v1/workspaces/{workspaceId}/import"}
+var mokImporterProxiedRoutes = []string{"POST /api/v1/workspaces/{workspaceId}/import"}
 
 const (
 	uploadMaxBytes      = 51 << 20 // the importer's 50 MiB plus room for multipart framing
@@ -66,14 +66,14 @@ func RegisterWebRoutes(mux *http.ServeMux, upstream http.Handler) {
 
 func RegisterCoreRoutes(mux *http.ServeMux, bearer func(http.Handler) http.Handler, upstream http.Handler) {
 	h := bearer(upstream)
-	for _, pattern := range coreRoutes {
+	for _, pattern := range coreProxiedRoutes {
 		register(mux, h, pattern, "core")
 	}
 }
 
 func RegisterImporterRoutes(mux *http.ServeMux, bearer func(http.Handler) http.Handler, upstream http.Handler) {
 	h := bearer(uploadLimit(upstream))
-	for _, pattern := range mokImporterRoutes {
+	for _, pattern := range mokImporterProxiedRoutes {
 		register(mux, h, pattern, "mok-importer")
 	}
 }
