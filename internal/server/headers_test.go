@@ -5,29 +5,55 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/fintrace-project/fintrace-bff/internal/config"
+	"github.com/fintrace-project/fintrace-bff/internal/csp"
 	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 )
 
-func TestDefaultPolicyNamesTheRealmByItsOriginInFormAction(t *testing.T) {
-	csp := securityHeaders(testConfig()).Get("Content-Security-Policy")
+var styleNonce = regexp.MustCompile(`style-src 'self' 'nonce-([^']+)'`)
 
-	if !strings.Contains(csp, "form-action 'self' https://realm.example;") {
-		t.Errorf("policy %q, want form-action naming the realm's origin, or logout's redirect is blocked", csp)
+func nonceIn(t *testing.T, policy string) string {
+	t.Helper()
+	m := styleNonce.FindStringSubmatch(policy)
+	if m == nil {
+		t.Fatalf("policy %q carries no nonce in style-src", policy)
 	}
-	if strings.Contains(csp, "/realms") {
-		t.Errorf("policy %q names the issuer's path, which would match only that path", csp)
+	return m[1]
+}
+
+// serveSecured passes one request through the middleware alone and returns what the handler behind it got.
+func serveSecured(t *testing.T, cfg config.Config) (*httptest.ResponseRecorder, *http.Request) {
+	t.Helper()
+	var seen *http.Request
+	h := withSecurityHeaders(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { seen = r }), cfg)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	return rec, seen
+}
+
+func TestDefaultPolicyCarriesAFreshNonceForEachResponse(t *testing.T) {
+	cfg := testConfig()
+
+	first, seen := serveSecured(t, cfg)
+	policy := first.Header().Get(cspHeader)
+	nonce := nonceIn(t, policy)
+	if want := csp.Policy(cfg.IssuerURI, nonce); policy != want {
+		t.Errorf("policy = %q, want %q", policy, want)
 	}
-	for _, directive := range []string{"script-src 'self';", "frame-ancestors 'none'", "object-src 'none'"} {
-		if !strings.Contains(csp, directive) {
-			t.Errorf("policy %q lacks %q", csp, directive)
-		}
+	if got, ok := csp.NonceFrom(seen.Context()); !ok || got != nonce {
+		t.Errorf("the handler got nonce %q (%v), want the header's %q, or the page names another", got, ok, nonce)
+	}
+
+	second, _ := serveSecured(t, cfg)
+	if again := nonceIn(t, second.Header().Get(cspHeader)); again == nonce {
+		t.Errorf("two responses share nonce %q, want a fresh one each", nonce)
 	}
 }
 
@@ -35,8 +61,14 @@ func TestPolicyFromTheEnvironmentReplacesTheDefaultWhole(t *testing.T) {
 	cfg := testConfig()
 	cfg.ContentSecurityPolicy = "default-src 'self'; script-src 'self' 'unsafe-inline'"
 
-	if got := securityHeaders(cfg).Get("Content-Security-Policy"); got != cfg.ContentSecurityPolicy {
+	rec, seen := serveSecured(t, cfg)
+
+	if got := rec.Header().Values(cspHeader); len(got) != 1 || got[0] != cfg.ContentSecurityPolicy {
 		t.Errorf("policy = %q, want the variable's %q unchanged", got, cfg.ContentSecurityPolicy)
+	}
+	// A nonce would make browsers ignore the 'unsafe-inline' the dev policy relies on
+	if got, ok := csp.NonceFrom(seen.Context()); ok {
+		t.Errorf("the handler got nonce %q, want none beside a configured policy", got)
 	}
 }
 
@@ -54,8 +86,9 @@ func TestHSTSOnlyForAnHTTPSOrigin(t *testing.T) {
 
 // The proxy drops exactly the names the middleware sets: a name added to one side only would go unnoticed.
 func TestSecurityHeadersAreTheNamesTheProxyDrops(t *testing.T) {
+	rec, _ := serveSecured(t, testConfig())
 	var set []string
-	for name := range securityHeaders(testConfig()) {
+	for name := range rec.Header() {
 		set = append(set, name)
 	}
 	dropped := slices.Clone(proxy.SecurityHeaders)
@@ -86,13 +119,13 @@ func TestEveryAnswerCarriesEachSecurityHeaderOnce(t *testing.T) {
 	upstreams := proxy.UpstreamProxies{
 		Core:        proxy.NewProxy(target, proxy.NewTransport(tp, time.Second, slog.LevelInfo), cfg),
 		MOKImporter: http.NotFoundHandler(),
-		Web:         proxy.NewProxy(target, proxy.NewTransport(tp, time.Second, slog.LevelDebug), cfg),
+		Web:         proxy.WithCSP(proxy.NewProxy(target, proxy.NewTransport(tp, time.Second, slog.LevelDebug), cfg)),
 	}
 	h, err := RoutesHandler(tp, &stubAuth{}, cfg, upstreams)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := securityHeaders(cfg)
+	fixed := securityHeaders(cfg)
 
 	tests := []struct {
 		name   string
@@ -121,8 +154,16 @@ func TestEveryAnswerCarriesEachSecurityHeaderOnce(t *testing.T) {
 			}
 			for _, name := range proxy.SecurityHeaders {
 				got := rec.Header().Values(name)
-				if len(got) != 1 || got[0] != want.Get(name) {
-					t.Errorf("%s = %q, want exactly the BFF's %q", name, got, want.Get(name))
+				if len(got) != 1 {
+					t.Errorf("%s = %q, want exactly one, the BFF's", name, got)
+					continue
+				}
+				want := fixed.Get(name)
+				if name == cspHeader {
+					want = csp.Policy(cfg.IssuerURI, nonceIn(t, got[0]))
+				}
+				if got[0] != want {
+					t.Errorf("%s = %q, want the BFF's %q", name, got[0], want)
 				}
 			}
 		})

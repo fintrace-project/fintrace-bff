@@ -33,6 +33,6 @@ func MakeUpstreamProxies(cfg config.Config, transports UpstreamTransports) Upstr
 	return UpstreamProxies{
 		Core:        NewProxy(cfg.CoreURL, transports.Core, cfg),
 		MOKImporter: NewProxy(cfg.MOKImporterURL, transports.MOKImporter, cfg),
-		Web:         NewProxy(cfg.WebURL, transports.Web, cfg),
+		Web:         WithCSP(NewProxy(cfg.WebURL, transports.Web, cfg)),
 	}
 }

@@ -1,17 +1,21 @@
 package server
 
 import (
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/fintrace-project/fintrace-bff/internal/csp"
 	"github.com/fintrace-project/fintrace-bff/internal/server/proxy"
 )
 
@@ -29,7 +33,19 @@ type fakeWeb struct {
 	calls []webCall
 }
 
+// The shape fintrace-web's build gives index.html: Vite's html.cspNonce writes the placeholder.
+const builtPage = `<!doctype html><meta property="csp-nonce" nonce="` + csp.Placeholder + `">` +
+	`<link rel="stylesheet" nonce="` + csp.Placeholder + `" href="/assets/index.css">`
+
 func newFakeWeb(t *testing.T) *fakeWeb {
+	t.Helper()
+	return newFakeWebServing(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, builtPage)
+	})
+}
+
+func newFakeWebServing(t *testing.T, respond http.HandlerFunc) *fakeWeb {
 	t.Helper()
 	web := &fakeWeb{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,8 +53,7 @@ func newFakeWeb(t *testing.T) *fakeWeb {
 		web.calls = append(web.calls, webCall{method: r.Method, path: r.URL.Path, cookie: r.Header.Get("Cookie"),
 			auth: r.Header.Get("Authorization"), upgrade: r.Header.Get("Upgrade")})
 		web.mu.Unlock()
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte("<!doctype html>"))
+		respond(w, r)
 	}))
 	t.Cleanup(srv.Close)
 	u, err := url.Parse(srv.URL)
@@ -61,7 +76,7 @@ func mustWebRoutes(t *testing.T, auth *stubAuth, web *fakeWeb, core *fakeCore) h
 	upstreams := proxy.UpstreamProxies{
 		Core:        proxy.NewProxy(core.url, proxy.NewTransport(tp, time.Second, slog.LevelInfo), testConfig()),
 		MOKImporter: http.NotFoundHandler(),
-		Web:         proxy.NewProxy(web.url, proxy.NewTransport(tp, time.Second, slog.LevelDebug), testConfig()),
+		Web:         proxy.WithCSP(proxy.NewProxy(web.url, proxy.NewTransport(tp, time.Second, slog.LevelDebug), testConfig())),
 	}
 	h, err := RoutesHandler(tp, auth, testConfig(), upstreams)
 	if err != nil {
@@ -104,6 +119,41 @@ func TestWebUIServesEveryPathOutsideAPIAndAuth(t *testing.T) {
 				t.Errorf("authentication ran %v for a static file, want nothing", ran)
 			}
 		})
+	}
+}
+
+// nginx serves index.html precompressed and revalidates it by ETag; the page that reaches the browser must
+// name the very nonce its policy allows, or Radix's scroll lock is refused its <style>.
+func TestWebUIPageNamesTheNonceItsPolicyAllows(t *testing.T) {
+	web := newFakeWebServing(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("ETag", `"built-1"`)
+		gz := gzip.NewWriter(w)
+		_, _ = io.WriteString(gz, builtPage)
+		_ = gz.Close()
+	})
+	req := httptest.NewRequest(http.MethodGet, "/workspaces", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	rec := httptest.NewRecorder()
+	mustWebRoutes(t, &stubAuth{}, web, newFakeCore(t)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	nonce := nonceIn(t, rec.Header().Get(cspHeader))
+	if want := strings.ReplaceAll(builtPage, csp.Placeholder, nonce); rec.Body.String() != want {
+		t.Errorf("body = %q, want %q", rec.Body.String(), want)
+	}
+	if ce := rec.Header().Get("Content-Encoding"); ce != "" {
+		t.Errorf("Content-Encoding = %q on a body sent plain, want none", ce)
+	}
+	if etag := rec.Header().Get("ETag"); etag != "" {
+		t.Errorf("ETag = %q, want none: a 304 would keep a page naming an earlier nonce", etag)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
 	}
 }
 

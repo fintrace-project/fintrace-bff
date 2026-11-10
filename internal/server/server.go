@@ -56,7 +56,7 @@ func RoutesHandler(
 		return nil, err
 	}
 
-	return withTracing(withSecurityHeaders(h, securityHeaders(cfg)), tp), nil
+	return withTracing(withSecurityHeaders(h, cfg), tp), nil
 }
 
 func withCSRF(handler http.Handler, cfg config.Config) (http.Handler, error) {
