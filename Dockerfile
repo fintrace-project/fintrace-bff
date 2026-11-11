@@ -2,7 +2,7 @@
 # compiling in the image keeps run-local.sh and the release job free of a separate build step.
 # Both stages pinned by digest so a base update is a commit, and an unchanged release still rebuilds for
 # it (§7.8); Dependabot moves the digests
-FROM golang:1.27.2@sha256:820153096fda4de6ac1b7194d12e416b7dd8f4e9a33d17e0345b111b945162d8 AS build
+FROM golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e AS build
 WORKDIR /src
 
 COPY go.mod go.sum* ./
