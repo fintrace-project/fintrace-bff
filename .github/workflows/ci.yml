@@ -45,5 +45,6 @@ jobs:
         with:
           context: .
           push: false
+          pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max

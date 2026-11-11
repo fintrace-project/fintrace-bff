@@ -1,0 +1,13 @@
+# Moves the Dockerfile's pinned base digests when their tags are republished (§7.8). A major version — a
+# new JDK, Node or Alpine line — is a decision, not a weekly bump
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    ignore:
+      - dependency-name: "*"
+        update-types: [ "version-update:semver-major" ]
