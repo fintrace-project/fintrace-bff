@@ -53,6 +53,7 @@ var coreProxiedRoutes = []string{
 	"GET /api/v1/workspaces/{workspaceId}/statistics/balances/series",
 	"GET /api/v1/workspaces/{workspaceId}/statistics/cashflow",
 	"GET /api/v1/workspaces/{workspaceId}/statistics/categories/totals",
+	"GET /api/v1/workspaces/{workspaceId}/statistics/categories/top",
 
 	"GET /api/v1/users/current",
 }
